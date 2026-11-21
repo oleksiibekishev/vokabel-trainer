@@ -55,7 +55,7 @@ async function main() {
   async function solveChoice() {
     for (let q = 0; q < 4; q++) {
       if (await modalVisible()) return;
-      const prompt = (await page.locator('.choice .prompt').textContent()).trim();
+      const prompt = (await page.locator('.choice .prompt-card .word').textContent()).trim();
       const w = byDe.get(prompt) || byEn.get(prompt);
       const answer = byDe.get(prompt) ? w.en : w.de;
       const roundBefore = await roundText();
@@ -68,10 +68,11 @@ async function main() {
   async function solveGaps(mistake = false) {
     for (let k = 0; k < 2; k++) {
       const roundBefore = await roundText();
-      const prompt = (await page.locator('.typing .prompt').textContent()).trim();
-      const target = [...core.primaryForm(byDe.get(prompt).en)];
-      const slots = page.locator('.gapword .slot');
+      const prompt = (await page.locator('.typing .prompt-card .word').textContent()).trim();
+      const target = [...core.primaryForm(byDe.get(prompt).en)].filter((c) => c !== ' ');
+      const slots = page.locator('.gapword .cell');
       const cnt = await slots.count();
+      assert.equal(cnt, target.length, 'one cell per letter');
       let letters = '';
       for (let i = 0; i < cnt; i++) {
         if ((await slots.nth(i).getAttribute('class')).includes('gap')) letters += target[i];
@@ -85,7 +86,7 @@ async function main() {
   }
 
   async function solveSpell(typo = null) {
-    const prompt = (await page.locator('.typing .prompt').textContent()).trim();
+    const prompt = (await page.locator('.typing .prompt-card .word').textContent()).trim();
     const w = byDe.get(prompt);
     await page.locator('.spell-input').fill(typo || core.displayForms(w.en)[0].toUpperCase());
     await page.locator('.typing .btn.primary').click();
@@ -125,9 +126,9 @@ async function main() {
   const firstRound = (await page.locator('.tile[data-side=en]').allTextContents()).sort();
   await shot(page, '02-easy-round1');
   // timer runs
-  const t0 = Number(await page.locator('.timer-num').textContent());
+  const t0 = Number(await page.locator('.timer .num').textContent());
   await page.waitForTimeout(1300);
-  const t1 = Number(await page.locator('.timer-num').textContent());
+  const t1 = Number(await page.locator('.timer .num').textContent());
   assert.ok(t1 < t0, 'timer counts down');
   // select en, switch selection to another en (no error), then wrong de
   const enTiles = page.locator('.tile[data-side=en]');
@@ -138,7 +139,7 @@ async function main() {
   const wrongDe = page.locator('.tile[data-side=de]').filter({ hasNotText: byEn.get(selText).de }).first();
   await wrongDe.click();
   await page.waitForSelector('.modal-fail');
-  assert.equal(await page.locator('.modal-fail .pair-row').count(), 3);
+  assert.equal(await page.locator('.modal-fail .res-row').count(), 3);
   await page.waitForTimeout(900);
   await shot(page, '03-wrong-pair');
   await page.locator('.modal .btn', { hasText: 'Nochmal' }).click();
@@ -146,7 +147,7 @@ async function main() {
   assert.equal(await roundText(), 'Runde 1/6');
   const firstRoundAgain = (await page.locator('.tile[data-side=en]').allTextContents()).sort();
   assert.deepEqual(firstRoundAgain, firstRound, 'round 1 has the same words every attempt');
-  assert.equal(Number(await page.locator('.timer-num').textContent()), 60);
+  assert.equal(Number(await page.locator('.timer .num').textContent()), 60);
   await page.locator('.game-top .icon-btn').click();
   await page.locator('.modal .btn', { hasText: 'Beenden' }).click();
   await page.waitForSelector('.home');
@@ -181,13 +182,13 @@ async function main() {
     await page.waitForFunction((rr) => document.querySelector('.game-round').textContent.startsWith('Runde ' + rr), r + 1);
   }
   assert.equal(await page.locator('.board').getAttribute('class'), 'board board-spell', 'hard round 3 is spelling');
-  const prompt = (await page.locator('.typing .prompt').textContent()).trim();
+  const prompt = (await page.locator('.typing .prompt-card .word').textContent()).trim();
   const right = core.displayForms(byDe.get(prompt).en)[0];
   const typo = right.length > 4 ? right.slice(0, 2) + right.slice(3) + 'x' : right + 'x';
   assert.ok(!(await page.locator('.board').textContent()).includes('null'), 'no stray text on the board');
   await solveSpell(typo);
-  await page.waitForSelector('.modal-fail .diff-grid');
-  assert.ok(await page.locator('.dcol.d-missing, .dcol.d-sub, .dcol.d-extra').count() >= 1);
+  await page.waitForSelector('.modal-fail .diff-cols');
+  assert.ok(await page.locator('.dcell.missing, .dcell.bad, .dcell.extra').count() >= 1);
   await page.waitForTimeout(1500);
   await shot(page, '07-spell-diff');
   await page.locator('.modal .btn', { hasText: 'Menü' }).click();
@@ -203,7 +204,7 @@ async function main() {
       if (cls.includes('board-gaps')) {
         await shot(page, '08-gaps');
         await solveGaps(true);
-        await page.waitForSelector('.modal-fail .diff-grid');
+        await page.waitForSelector('.modal-fail .diff-cols');
         await page.waitForTimeout(1200);
         await shot(page, '09-gaps-diff');
         gapsFound = true;
@@ -236,7 +237,7 @@ async function main() {
   await page.locator('.list-card .btn', { hasText: 'Listen' }).click();
   await page.waitForSelector('textarea');
   await page.locator('textarea').fill('Wortliste\n\ndog - Hund\ncat - Katze\nhouse - Haus\ntree - Baum\ncar - Auto\nnoline');
-  await page.locator('input[placeholder="Name der Liste"]').fill('Testliste');
+  await page.locator('#list-name').fill('Testliste');
   assert.ok((await page.locator('.preview').textContent()).includes('5 Wortpaare'));
   await shot(page, '11-new-list');
   await page.locator('.btn', { hasText: 'Liste speichern' }).click();
@@ -270,14 +271,14 @@ async function main() {
   await page.locator('.list-card .btn', { hasText: 'Wörter' }).click();
   await page.locator('.segmented button', { hasText: 'Schwierigste' }).click();
   await shot(page, '14-words');
-  assert.ok(await page.locator('.miss:not(.empty)').count() >= 1, 'mistakes are counted');
+  assert.ok(await page.locator('.miss:not(.none)').count() >= 1, 'mistakes are counted');
   await page.goBack();
   await page.waitForSelector('.home');
   await page.locator('.home-top .icon-btn').click();
   await page.waitForSelector('.switch');
   await shot(page, '15-settings');
   await page.locator('.btn', { hasText: 'Sicherungscode erstellen' }).click();
-  const code = await page.locator('textarea.mono').inputValue();
+  const code = (await page.locator('.code-box output').textContent()).trim();
   assert.ok(code.startsWith('z') || code.startsWith('p'));
 
   // ---------- 8. Android back button during a game asks before quitting ----------

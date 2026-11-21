@@ -39,6 +39,12 @@ to record - erfassen, aufnehmen
 - Mehrere richtige englische Antworten mit `=` oder `/` trennen
 - Beim Schreiben ist Groß-/Kleinschreibung egal, `to` am Anfang ist optional
 
+## Design
+
+Warmer, ruhiger Stil: Ivory-Hintergrund, dunkle Hauptbuttons, Clay (`#D97757`) nur für „spannende“ Stellen (Zeitbalken, aktuelle Runde, Auswahl, „+10 s“). Hell- und Dunkelmodus folgen dem Handy.
+
+Schriften (selbst gehostet in `fonts/`, SIL Open Font License): Source Serif 4 (Titel, Timer), Manrope (Text), JetBrains Mono (Lücken, Buchstabenvergleich). Icons: Lucide (ISC-Lizenz).
+
 ## Für Entwickler
 
 Reines HTML/CSS/JavaScript ohne Build-Schritt.

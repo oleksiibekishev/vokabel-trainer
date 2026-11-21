@@ -1,5 +1,5 @@
 // Offline support. Bump VERSION on every deploy so phones fetch the new files.
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const CACHE = 'vokabeltrainer-' + VERSION;
 const FILES = [
   './',
@@ -18,6 +18,11 @@ const FILES = [
   './icons/icon-512.png',
   './icons/maskable-512.png',
   './icons/apple-touch-icon.png',
+  './fonts/source-serif-4-latin-opsz-normal.woff2',
+  './fonts/source-serif-4-cyrillic-opsz-normal.woff2',
+  './fonts/manrope-latin-wght-normal.woff2',
+  './fonts/manrope-cyrillic-wght-normal.woff2',
+  './fonts/jetbrains-mono-latin-wght-normal.woff2',
 ];
 
 self.addEventListener('install', (event) => {

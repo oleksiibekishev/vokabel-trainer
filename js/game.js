@@ -3,11 +3,27 @@ import {
   checkAnswer, closestForm, diffWords, shuffle, wordFilterFor,
 } from './core.js';
 import * as store from './store.js';
-import { t } from './i18n.js';
-import { h, icon, modal, sfx } from './ui.js';
+import { t, tSplit } from './i18n.js';
+import { h, icon, levelBars, modal, sfx } from './ui.js';
 
 const BONUS_PAUSE_MS = 900;
 const KEYBOARD_TYPES = ['gaps', 'spell'];
+const CONFETTI = ['#D97757', '#788C5D', '#C9A82D', '#C46686', '#6A9BCC', '#E3DACC'];
+
+/** Cell width so that the longest word still fits on one line. */
+function cellWidth(longest, avail, max, min) {
+  if (!longest) return max;
+  return Math.max(min, Math.min(max, Math.floor((avail - (longest - 1) * 2) / longest)));
+}
+
+function splitWords(chars) {
+  const groups = [[]];
+  chars.forEach((c, i) => {
+    if (c === ' ') groups.push({ space: i }, []);
+    else groups[groups.length - 1].push(i);
+  });
+  return groups;
+}
 
 export class Game {
   constructor({ root, list, level, onMenu, onNextLevel }) {
@@ -46,22 +62,24 @@ export class Game {
   // ---------- setup ----------
 
   buildShell() {
-    const quitBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('quit'), onclick: () => this.askQuit() }, icon('close'));
-    this.elRound = h('div', { class: 'game-round' });
-    this.elTimerNum = h('span', { class: 'timer-num' }, '0');
-    this.elTimer = h('div', { class: 'timer', role: 'timer' }, this.elTimerNum, h('span', { class: 'timer-unit' }, 's'));
-    this.elBar = h('div', { class: 'timebar-fill' });
+    this.elRound = h('span', { class: 'game-round' });
+    this.elTimerNum = h('span', { class: 'num' }, '0');
+    this.elTimer = h('output', { class: 'timer', role: 'timer' }, icon('pause'), this.elTimerNum, h('span', { class: 'unit' }, 's'));
+    this.elBarFill = h('div', { class: 'timebar-fill' });
+    this.elBar = h('div', { class: 'timebar' }, this.elBarFill);
     this.elDots = h('div', { class: 'dots', 'aria-hidden': 'true' });
-    this.elTask = h('div', { class: 'task-label' });
+    this.elTask = h('h2', { class: 'task-title' });
     this.board = h('main', { class: 'board' });
     this.fx = h('div', { class: 'fx-layer', 'aria-hidden': 'true' });
-    this.root.className = 'screen game level-' + this.level;
+    this.root.className = 'screen game lv-' + this.level;
     this.root.replaceChildren(
       h('header', { class: 'game-top' },
-        quitBtn,
-        h('div', { class: 'game-info' }, h('div', { class: 'game-level' }, t('level_' + this.level)), this.elRound),
+        h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('quitTitle'), onclick: () => this.askQuit() }, icon('close')),
+        h('div', { class: 'game-info' },
+          h('span', { class: 'game-level' }, levelBars(this.level, 'sm'), t('level_' + this.level)),
+          this.elRound),
         this.elTimer),
-      h('div', { class: 'timebar' }, this.elBar),
+      this.elBar,
       this.elDots,
       this.elTask,
       this.board,
@@ -114,14 +132,16 @@ export class Game {
 
   renderTimer() {
     const sec = Math.ceil(this.timeLeft / 1000);
+    const low = this.timeLeft <= 10000 && !this.ended;
     if (sec !== this.shownSec) {
       this.shownSec = sec;
       this.elTimerNum.textContent = String(sec);
-      this.elTimer.classList.toggle('low', sec <= 10 && !this.ended);
+      this.elTimer.setAttribute('aria-label', t('timeLeftAria', { t: sec }));
     }
+    this.elTimer.classList.toggle('low', low);
+    this.elBar.classList.toggle('low', low);
     const pct = Math.max(0, Math.min(100, (this.timeLeft / (this.cfg.start * 1000)) * 100));
-    this.elBar.style.width = pct + '%';
-    this.elBar.classList.toggle('low', this.timeLeft <= 10000);
+    this.elBarFill.style.width = pct + '%';
   }
 
   onVisibility() {
@@ -133,8 +153,18 @@ export class Game {
     this.root.classList.add('paused');
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     const opts = askQuit
-      ? { title: t('quitTitle'), body: h('p', null, t('quitText')), buttons: [{ label: t('quit'), value: 'quit', kind: 'danger' }, { label: t('resume'), value: 'resume', kind: 'primary' }] }
-      : { title: t('pauseTitle'), buttons: [{ label: t('quit'), value: 'quit', kind: 'secondary' }, { label: t('resume'), value: 'resume', kind: 'primary' }] };
+      ? {
+        title: t('quitTitle'),
+        body: h('p', { class: 'modal-text' }, t('quitText')),
+        buttons: [{ label: t('quit'), value: 'quit', kind: 'danger' }, { label: t('resume'), value: 'resume', kind: 'outline', grow: true }],
+      }
+      : {
+        title: t('pauseTitle'),
+        center: true,
+        clear: true,
+        icon: { name: 'pause', kind: 'accent', extra: 'big' },
+        buttons: [{ label: t('quit'), value: 'quit', kind: 'outline' }, { label: t('resume'), value: 'resume', kind: 'primary', grow: true }],
+      };
     modal(opts).then((v) => {
       if (this.destroyed) return;
       if (v === 'quit') {
@@ -159,6 +189,7 @@ export class Game {
   // ---------- rounds ----------
 
   renderDots() {
+    this.elDots.classList.toggle('many', this.plan.length > 10);
     this.elDots.replaceChildren(...this.plan.map((type, i) => h('span', {
       class: 'dot' + (i < this.roundIdx ? ' done' : '') + (i === this.roundIdx ? ' cur' : '') + (i < this.fixed.length ? ' fixed' : ''),
       'data-type': type,
@@ -186,6 +217,7 @@ export class Game {
     this.currentInput = null;
     this.elRound.textContent = t('round', { r: this.roundIdx + 1, n: this.cfg.rounds });
     this.elTask.textContent = t('task_' + type);
+    this.root.classList.toggle('typing-round', KEYBOARD_TYPES.includes(type));
     this.renderDots();
     this.board.replaceChildren();
     this.board.className = 'board board-' + type;
@@ -214,38 +246,55 @@ export class Game {
     sfx.round();
     this.timeLeft += this.cfg.bonus * 1000;
     this.hold('bonus');
-    if (this.cfg.bonus > 0) this.flyText('+' + this.cfg.bonus + ' s', 'bonus-fly');
+    if (this.cfg.bonus > 0) this.flash(h('div', { class: 'bonus-chip' }, '+' + this.cfg.bonus + ' s'), 1400);
     this.startRound();
     this.later(BONUS_PAUSE_MS, () => this.release('bonus'));
   }
 
-  flyText(text, cls) {
-    const el = h('div', { class: cls }, text);
+  flash(el, ms) {
     this.fx.appendChild(el);
-    setTimeout(() => el.remove(), 1400);
+    setTimeout(() => el.remove(), ms);
+  }
+
+  checkFly() {
+    this.flash(h('div', { class: 'check-fly' }, icon('check')), 800);
+  }
+
+  questionHeader(n, cur, dir) {
+    const bars = n > 1
+      ? h('div', { class: 'qbars', 'aria-hidden': 'true' },
+        Array.from({ length: n }, (_, i) => h('span', { class: i < cur ? 'done' : i === cur ? 'cur' : '' })))
+      : null;
+    return h('div', { class: 'qrow' + (bars ? '' : ' end') }, bars, h('span', { class: 'dir-chip' }, t(dir === 'de2en' ? 'dirDeEn' : 'dirEnDe')));
+  }
+
+  promptCard(field, text, compact) {
+    return h('div', { class: 'prompt-card pop' + (compact ? ' compact' : '') },
+      h('span', { class: 'label' }, t('label_' + field)),
+      h('span', { class: 'word', lang: field }, text));
   }
 
   // ---------- game: pairs ----------
 
   renderPairs(words) {
-    const tiles = [];
     const make = (w, side) => {
       const el = h('button', { class: 'tile', type: 'button', lang: side, 'data-side': side }, side === 'en' ? w.en : w.de);
       const tile = { el, w, side, done: false };
       el.addEventListener('click', () => this.tapTile(tile));
-      tiles.push(tile);
       return el;
     };
+    let grid;
     if (!this.cfg.mixed) {
       const left = shuffle(words.slice()).map((w) => make(w, 'en'));
       const right = shuffle(words.slice()).map((w) => make(w, 'de'));
-      this.board.appendChild(h('div', { class: 'pairs cols' },
-        h('div', { class: 'col' }, h('div', { class: 'col-head' }, 'English'), left),
-        h('div', { class: 'col' }, h('div', { class: 'col-head' }, 'Deutsch'), right)));
+      const cells = [h('span', { class: 'col-head' }, t('head_en')), h('span', { class: 'col-head' }, t('head_de'))];
+      left.forEach((l, i) => cells.push(l, right[i]));
+      grid = h('div', { class: 'pairs cols' }, cells);
     } else {
       const all = [...words.map((w) => make(w, 'en')), ...words.map((w) => make(w, 'de'))];
-      this.board.appendChild(h('div', { class: 'pairs grid' }, shuffle(all)));
+      grid = h('div', { class: 'pairs grid' }, shuffle(all));
     }
+    this.board.appendChild(grid);
     this.pairs = { sel: null, left: words.length };
   }
 
@@ -256,33 +305,49 @@ export class Game {
     if (!sel) {
       ps.sel = tile;
       tile.el.classList.add('sel');
+      tile.el.setAttribute('aria-pressed', 'true');
       return;
     }
     if (sel === tile) {
       tile.el.classList.remove('sel');
+      tile.el.removeAttribute('aria-pressed');
       ps.sel = null;
       return;
     }
     if (sel.side === tile.side) {
       sel.el.classList.remove('sel');
+      sel.el.removeAttribute('aria-pressed');
       ps.sel = tile;
       tile.el.classList.add('sel');
+      tile.el.setAttribute('aria-pressed', 'true');
       return;
     }
     ps.sel = null;
     sel.el.classList.remove('sel');
+    sel.el.removeAttribute('aria-pressed');
+    const mark = (el, name) => {
+      const m = icon(name, 'mark');
+      m.setAttribute('role', 'img');
+      m.setAttribute('aria-label', t(name === 'check' ? 'right' : 'wrong'));
+      m.removeAttribute('aria-hidden');
+      el.appendChild(m);
+    };
     if (sel.w.id === tile.w.id) {
       sel.done = tile.done = true;
-      sel.el.classList.add('done');
-      tile.el.classList.add('done');
-      sel.el.disabled = tile.el.disabled = true;
+      for (const x of [sel, tile]) {
+        x.el.classList.add('done');
+        x.el.disabled = true;
+        mark(x.el, 'check');
+      }
       sfx.good();
       store.bumpStat(this.list.id, tile.w.id, true);
       ps.left--;
       if (ps.left === 0) this.finishRound();
     } else {
-      sel.el.classList.add('wrong');
-      tile.el.classList.add('wrong');
+      for (const x of [sel, tile]) {
+        x.el.classList.add('wrong');
+        mark(x.el, 'close');
+      }
       const en = sel.side === 'en' ? sel.w : tile.w;
       const de = sel.side === 'de' ? sel.w : tile.w;
       this.fail({ kind: 'pairs', en, de, ids: [en.id, de.id] });
@@ -303,14 +368,14 @@ export class Game {
       const af = q.dir === 'de2en' ? 'en' : 'de';
       const opts = shuffle([q.w, ...pickDistractors(this.words, q.w, af, 3, Math.random, pf)]);
       const buttons = opts.map((o) => {
-        const b = h('button', { class: 'option', type: 'button', lang: af }, o[af]);
+        const b = h('button', { class: 'option', type: 'button', lang: af },
+          h('span', null, o[af]), icon('check', 'icon-ok'), icon('close', 'icon-bad'));
         b.addEventListener('click', () => pick(o, b, buttons, opts));
         return b;
       });
       wrap.replaceChildren(
-        this.progressDots(qs.length, qi),
-        h('div', { class: 'prompt-dir' }, t(q.dir === 'de2en' ? 'dirDeEn' : 'dirEnDe')),
-        h('div', { class: 'prompt pop', lang: pf }, q.w[pf]),
+        this.questionHeader(qs.length, qi, q.dir),
+        this.promptCard(pf, q.w[pf], false),
         h('div', { class: 'options' }, buttons),
       );
     };
@@ -337,12 +402,6 @@ export class Game {
     show();
   }
 
-  progressDots(n, cur) {
-    if (n <= 1) return document.createComment('single');
-    return h('div', { class: 'q-progress' },
-      Array.from({ length: n }, (_, i) => h('span', { class: i < cur ? 'done' : i === cur ? 'cur' : '' })));
-  }
-
   // ---------- game: missing letters ----------
 
   renderGaps(words) {
@@ -357,18 +416,30 @@ export class Game {
     const show = () => {
       const it = items[ii];
       const chars = [...it.target];
-      const slots = chars.map((c, idx) => {
-        if (it.hidden.includes(idx)) return h('span', { class: 'slot gap' });
-        if (c === ' ') return h('span', { class: 'slot space' });
-        return h('span', { class: 'slot' }, c);
+      const groups = splitWords(chars);
+      const longest = Math.max(...groups.filter(Array.isArray).map((g) => g.length));
+      const avail = Math.min(528, window.innerWidth - 32) - 12;
+      const cw = cellWidth(longest, avail, 20, 13);
+      const cells = new Map();
+      const groupEls = groups.map((g) => {
+        if (!Array.isArray(g)) return null;
+        return h('span', { class: 'wgroup' }, g.map((idx) => {
+          const isGap = it.hidden.includes(idx);
+          const el = h('span', { class: 'cell' + (isGap ? ' gap' : ''), style: { width: cw + 'px', fontSize: Math.min(19, Math.round(cw * 0.95)) + 'px' } }, isGap ? '' : chars[idx]);
+          cells.set(idx, el);
+          return el;
+        }));
       });
-      const gapEls = it.hidden.map((idx) => slots[idx]);
+      const gapEls = it.hidden.map((idx) => cells.get(idx));
       const input = h('input', {
         class: 'gap-input', type: 'text', autocomplete: 'off', autocorrect: 'off', autocapitalize: 'none',
-        spellcheck: 'false', maxlength: String(it.hidden.length), enterkeyhint: 'done', 'aria-label': t('task_gaps'),
+        spellcheck: 'false', maxlength: String(it.hidden.length), enterkeyhint: 'done', 'aria-label': t('task_gaps') + ': ' + chars.map((c, i) => (it.hidden.includes(i) ? '_' : c)).join(' '),
       });
-      const wordEl = h('div', { class: 'gapword', lang: 'en' }, slots, input);
-      const okBtn = h('button', { class: 'btn primary wide', type: 'button' }, t('check'));
+      const box = h('div', { class: 'gapbox' },
+        h('span', { class: 'gapword', lang: 'en', 'aria-hidden': 'true' }, groupEls),
+        h('span', { class: 'gap-hint', 'aria-hidden': 'true' }, icon('keyboard'), t('tapToType')),
+        input);
+      const okBtn = h('button', { class: 'btn primary typing-btn', type: 'button' }, t('check'));
       const letters = () => [...input.value.replace(/[^\p{L}]/gu, '')].slice(0, it.hidden.length);
       const update = () => {
         const v = letters();
@@ -378,14 +449,14 @@ export class Game {
           const ch = v[k] ? (target === target.toUpperCase() ? v[k].toUpperCase() : v[k].toLowerCase()) : '';
           el.textContent = ch;
           el.classList.toggle('filled', !!ch);
-          el.classList.toggle('cur', k === v.length);
+          el.classList.toggle('cur', k === v.length && document.activeElement === input);
         });
       };
       const submit = () => {
         if (this.ended || this.holds.has('pause')) return;
         const v = letters();
         if (v.length < it.hidden.length) {
-          this.nudge(wordEl);
+          this.nudge(box);
           input.focus({ preventScroll: true });
           return;
         }
@@ -398,7 +469,7 @@ export class Game {
           store.bumpStat(this.list.id, it.w.id, true);
           ii++;
           if (ii >= items.length) this.finishRound();
-          else { this.flyText('✓', 'check-fly'); show(); }
+          else { this.checkFly(); show(); }
         } else {
           gapEls.forEach((el, k) => {
             if (v[k].toLowerCase() !== chars[it.hidden[k]].toLowerCase()) el.classList.add('wrong');
@@ -407,20 +478,20 @@ export class Game {
         }
       };
       input.addEventListener('input', update);
+      input.addEventListener('focus', update);
+      input.addEventListener('blur', update);
       input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
       okBtn.addEventListener('pointerdown', (e) => e.preventDefault());
       okBtn.addEventListener('click', submit);
       wrap.replaceChildren(
-        this.progressDots(items.length, ii),
-        h('div', { class: 'prompt-dir' }, t('dirDeEn')),
-        h('div', { class: 'prompt pop', lang: 'de' }, it.w.de),
-        wordEl,
-        h('div', { class: 'hint' }, t('tapToType')),
+        this.questionHeader(items.length, ii, 'de2en'),
+        this.promptCard('de', it.w.de, true),
+        box,
         okBtn,
       );
-      update();
       this.currentInput = input;
       input.focus({ preventScroll: true });
+      update();
     };
     show();
   }
@@ -435,9 +506,9 @@ export class Game {
       const w = words[ii];
       const input = h('input', {
         class: 'spell-input', type: 'text', lang: 'en', autocomplete: 'off', autocorrect: 'off', autocapitalize: 'none',
-        spellcheck: 'false', enterkeyhint: 'done', placeholder: t('typeHere'), 'aria-label': t('task_spell'),
+        spellcheck: 'false', enterkeyhint: 'done', placeholder: t('typeHere'), 'aria-label': t('typeHere'),
       });
-      const okBtn = h('button', { class: 'btn primary wide', type: 'button' }, t('check'));
+      const okBtn = h('button', { class: 'btn primary typing-btn', type: 'button' }, t('check'));
       const submit = () => {
         if (this.ended || this.holds.has('pause')) return;
         const val = input.value.trim();
@@ -452,7 +523,7 @@ export class Game {
           store.bumpStat(this.list.id, w.id, true);
           ii++;
           if (ii >= words.length) this.finishRound();
-          else { this.flyText('✓', 'check-fly'); show(); }
+          else { this.checkFly(); show(); }
         } else {
           input.classList.add('wrong');
           this.fail({ kind: 'spell', word: w, typed: val, expected: closestForm(val, w.en), ids: [w.id] });
@@ -462,9 +533,8 @@ export class Game {
       okBtn.addEventListener('pointerdown', (e) => e.preventDefault());
       okBtn.addEventListener('click', submit);
       wrap.replaceChildren(
-        this.progressDots(words.length, ii),
-        h('div', { class: 'prompt-dir' }, t('dirDeEn')),
-        h('div', { class: 'prompt pop', lang: 'de' }, w.de),
+        this.questionHeader(words.length, ii, 'de2en'),
+        this.promptCard('de', w.de, true),
         input,
         okBtn,
       );
@@ -496,48 +566,92 @@ export class Game {
     info.ids.forEach((id) => store.bumpStat(this.list.id, id, false));
     store.recordResult(this.list.id, this.level, { completed: false, timeLeft: 0, round: this.roundIdx + 1 });
     this.root.classList.add('shake');
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     setTimeout(() => {
       if (this.destroyed) return;
       this.root.classList.remove('shake');
       this.showEndModal({
         title: t('wrongTitle'),
         cls: 'modal-fail',
-        body: h('div', null, this.failBody(info), h('p', { class: 'muted center' }, t('wrongSub'))),
+        icon: { name: 'close', kind: 'err' },
+        body: h('div', { class: 'modal-body' }, this.failBody(info), h('p', { class: 'encourage' }, t('wrongSub'))),
       });
-    }, 750);
+    }, reduce ? 0 : 800);
+  }
+
+  okRow(enWord, deWord, cls) {
+    return h('div', { class: 'res-row good ' + cls },
+      icon('check'),
+      h('span', null, h('b', { lang: 'en' }, enWord), ' = ', h('span', { lang: 'de' }, deWord)));
   }
 
   failBody(info) {
     if (info.kind === 'pairs') {
-      return h('div', { class: 'fail-pairs' },
-        h('p', { class: 'fail-label' }, t('wrongPair')),
-        h('div', { class: 'pair-row bad' }, h('span', { lang: 'en' }, info.en.en), h('span', { class: 'eq' }, '≠'), h('span', { lang: 'de' }, info.de.de)),
-        h('p', { class: 'fail-label' }, t('correctPairs')),
-        h('div', { class: 'pair-row good', style: { '--i': 1 } }, h('span', { lang: 'en' }, info.en.en), h('span', { class: 'eq' }, '='), h('span', { lang: 'de' }, info.en.de)),
-        h('div', { class: 'pair-row good', style: { '--i': 2 } }, h('span', { lang: 'en' }, info.de.en), h('span', { class: 'eq' }, '='), h('span', { lang: 'de' }, info.de.de)),
-      );
+      return h('div', { class: 'modal-body' },
+        h('div', { class: 'fail-group' },
+          h('span', { class: 'fail-label' }, t('wrongPair')),
+          h('div', { class: 'res-row bad' }, icon('close'),
+            h('s', null, h('span', { lang: 'en' }, info.en.en), ' ≠ ', h('span', { lang: 'de' }, info.de.de)))),
+        h('div', { class: 'fail-group' },
+          h('span', { class: 'fail-label' }, t('correctPairs')),
+          this.okRow(info.en.en, info.en.de, 'd1'),
+          this.okRow(info.de.en, info.de.de, 'd2')));
     }
     if (info.kind === 'choice') {
       const af = info.dir === 'de2en' ? 'en' : 'de';
       const pf = info.dir === 'de2en' ? 'de' : 'en';
-      return h('div', { class: 'fail-choice' },
-        h('div', { class: 'fail-prompt', lang: pf }, info.word[pf]),
-        h('div', { class: 'answer-row bad' }, h('span', { class: 'answer-tag' }, t('yourChoice')), h('span', { class: 'answer-text strike', lang: af }, info.chosen[af])),
-        h('div', { class: 'answer-row good', style: { '--i': 1 } }, h('span', { class: 'answer-tag' }, t('correctAnswer')), h('span', { class: 'answer-text', lang: af }, info.word[af])),
-      );
+      return h('div', { class: 'modal-body' },
+        h('div', { class: 'prompt-box' }, h('span', { class: 'label' }, t('label_' + pf)), h('span', { class: 'word', lang: pf }, info.word[pf])),
+        h('div', { class: 'fail-group' },
+          h('div', { class: 'answer-block bad' },
+            h('span', { class: 'fail-label' }, t('yourChoice')),
+            h('span', { class: 'val' }, icon('close'), h('s', { lang: af }, info.chosen[af]))),
+          h('div', { class: 'answer-block good' },
+            h('span', { class: 'fail-label' }, t('correctAnswer')),
+            h('span', { class: 'val' }, icon('check'), h('span', { lang: af }, info.word[af])))));
     }
-    // spelling or missing letters: letter-by-letter comparison
-    const ops = diffWords(info.typed, info.expected);
-    const cols = ops.map((op, i) => h('span', { class: 'dcol d-' + op.type, style: { '--i': i } },
-      h('span', { class: 'dtop' }, op.type === 'missing' ? '' : op.a === ' ' ? ' ' : op.a),
-      h('span', { class: 'dbot' }, op.type === 'extra' ? '' : op.b === ' ' ? ' ' : op.b)));
-    return h('div', { class: 'fail-spell' },
-      h('div', { class: 'fail-prompt', lang: 'de' }, info.word.de),
-      h('div', { class: 'diff', lang: 'en' },
-        h('div', { class: 'diff-labels' }, h('span', null, t('yourInput')), h('span', null, t('expected'))),
-        h('div', { class: 'diff-grid' }, cols)),
-      h('div', { class: 'full-answer' }, h('span', { lang: 'de' }, info.word.de), ' = ', h('span', { lang: 'en' }, info.word.en)),
-    );
+    return h('div', { class: 'modal-body' },
+      h('div', { class: 'prompt-box' }, h('span', { class: 'label' }, t('label_de')), h('span', { class: 'word', lang: 'de' }, info.word.de)),
+      this.diffView(info.typed, info.expected),
+      h('p', { class: 'answer-line' }, h('span', { lang: 'de' }, info.word.de), ' = ', h('b', { lang: 'en' }, info.word.en)));
+  }
+
+  /** Letter-by-letter comparison: top row = typed, bottom row = correct. */
+  diffView(typed, expected) {
+    const ops = diffWords(typed, expected);
+    const groups = [[]];
+    ops.forEach((op) => {
+      if (op.a === ' ' || op.b === ' ') groups.push({ op }, []);
+      else groups[groups.length - 1].push(op);
+    });
+    const n = ops.length;
+    const longest = Math.max(1, ...groups.filter(Array.isArray).map((g) => g.length));
+    const avail = Math.min(420, window.innerWidth - 32) - 40 - 64;
+    const cw = cellWidth(longest, avail, 24, 14);
+    const fs = Math.min(18, Math.round(cw * 0.78));
+    const allIn = n * 2 * 45 + 200;
+    let i = 0;
+    const cellStyle = (delay, wob) => ({ width: cw + 'px', fontSize: fs + 'px', '--in': delay + 'ms', '--wob': wob + 'ms' });
+    const vis = (c) => (c === ' ' ? '␣' : c);
+    const col = (op) => {
+      const k = i++;
+      const flag = op.type !== 'ok';
+      const topCls = op.type === 'ok' ? '' : op.type === 'sub' ? 'bad' : op.type === 'extra' ? 'extra' : 'missing';
+      const botCls = op.type === 'ok' ? '' : op.type === 'extra' ? 'empty' : 'good';
+      return h('span', { class: 'dcol' },
+        h('span', { class: 'dcell ' + topCls + (flag ? ' wob' : ''), style: cellStyle(k * 45, allIn) }, op.type === 'missing' ? '' : vis(op.a)),
+        h('span', { class: 'dcell ' + botCls + (flag && op.type !== 'extra' ? ' wob' : ''), style: cellStyle((n + k) * 45, allIn) }, op.type === 'extra' ? '' : vis(op.b)));
+    };
+    const parts = groups.map((g) => {
+      if (Array.isArray(g)) return g.length ? h('span', { class: 'diff-group' }, g.map(col)) : null;
+      const sp = g.op;
+      if (sp.type === 'ok') { i++; return null; }
+      return h('span', { class: 'diff-group' }, col(sp));
+    });
+    const label = t('yourInput') + ' „' + typed + '“, ' + t('expected') + ' „' + expected + '“';
+    return h('div', { class: 'diff', role: 'img', 'aria-label': label },
+      h('div', { class: 'diff-labels' }, h('span', null, t('yourInput').toUpperCase()), h('span', null, t('expected').toUpperCase())),
+      h('div', { class: 'diff-cols' }, parts));
   }
 
   timeUp() {
@@ -545,13 +659,15 @@ export class Game {
     this.endRun();
     sfx.bad();
     store.recordResult(this.list.id, this.level, { completed: false, timeLeft: 0, round: this.roundIdx + 1 });
+    const [pre, bold, post] = tSplit('timeUpSub', { round: t('roundOf', { r: this.roundIdx + 1, n: this.cfg.rounds }) }, 'round');
     this.showEndModal({
       title: t('timeUpTitle'),
       cls: 'modal-fail',
-      body: h('div', null,
-        h('p', { class: 'center' }, t('timeUpSub', { r: this.roundIdx + 1, n: this.cfg.rounds })),
-        h('div', { class: 'word-recap' }, this.roundWords.map((w) => h('div', { class: 'pair-row' },
-          h('span', { lang: 'en' }, w.en), h('span', { class: 'eq' }, '='), h('span', { lang: 'de' }, w.de))))),
+      icon: { name: 'hourglass', kind: 'accent' },
+      body: h('div', { class: 'modal-body' },
+        h('p', { class: 'modal-text', style: { color: 'var(--text)' } }, pre, h('b', null, bold), post),
+        h('div', { class: 'recap' }, this.roundWords.map((w) => h('div', null,
+          h('span', { lang: 'en' }, w.en), h('span', { lang: 'de' }, w.de))))),
     });
   }
 
@@ -561,24 +677,27 @@ export class Game {
     const secs = Math.ceil(this.timeLeft / 1000);
     const res = store.recordResult(this.list.id, this.level, { completed: true, timeLeft: secs, round: this.cfg.rounds });
     this.confetti();
-    const idx = LEVEL_IDS.indexOf(this.level);
-    const next = LEVEL_IDS[idx + 1];
-    const lines = [h('p', { class: 'center big' }, t('doneSub', { t: secs }))];
-    if (res.newRecord) lines.push(h('p', { class: 'center record' }, t('newRecord')));
-    if (res.unlocked) lines.push(h('p', { class: 'center unlocked' }, icon('check'), ' ', t('unlocked', { level: t('level_' + res.unlocked) })));
-    if (!next) lines.push(h('p', { class: 'center' }, t('allDone')));
-    this.showEndModal({ title: t('doneTitle'), cls: 'modal-win', body: h('div', null, lines), next });
+    const next = LEVEL_IDS[LEVEL_IDS.indexOf(this.level) + 1];
+    const lines = [
+      h('div', { class: 'rest' },
+        h('span', { class: 'eyebrow' }, t('restLabel')),
+        h('span', { class: 'rest-num' }, String(secs), h('span', { class: 'unit' }, ' s'))),
+    ];
+    if (res.newRecord) lines.push(h('span', { class: 'record-chip' }, icon('star'), t('newRecord')));
+    if (res.unlocked) lines.push(h('p', { class: 'unlock-line' }, icon('check'), t('unlocked', { level: t('level_' + res.unlocked) })));
+    if (!next) lines.push(h('p', { class: 'modal-text' }, t('allDone')));
+    const buttons = next
+      ? [
+        [{ label: t('nextLevel', { level: t('level_' + next) }), value: 'next', kind: 'primary', tall: true, icon: 'arrowRight' }],
+        [{ label: t('menu'), value: 'menu', kind: 'outline' }, { label: t('again'), value: 'again', kind: 'outline' }],
+      ]
+      : [{ label: t('menu'), value: 'menu', kind: 'outline' }, { label: t('again'), value: 'again', kind: 'primary', grow: true }];
+    this.showEndModal({ title: t('doneTitle'), icon: { name: 'check', kind: 'ok' }, center: true, body: lines, buttons, next, cls: 'modal-win' });
   }
 
-  showEndModal({ title, body, cls, next }) {
-    const buttons = [{ label: t('menu'), value: 'menu', kind: 'secondary' }];
-    if (next) {
-      buttons.push({ label: t('again'), value: 'again', kind: 'secondary' });
-      buttons.push({ label: t('nextLevel', { level: t('level_' + next) }), value: 'next', kind: 'primary' });
-    } else {
-      buttons.push({ label: t('again'), value: 'again', kind: 'primary' });
-    }
-    modal({ title, body, buttons, cls }).then((v) => {
+  showEndModal({ title, body, icon: ic, center = false, buttons, next, cls = '' }) {
+    const btns = buttons || [{ label: t('menu'), value: 'menu', kind: 'outline' }, { label: t('again'), value: 'again', kind: 'primary', grow: true }];
+    modal({ title, icon: ic, body, buttons: btns, center, cls: 'modal-end ' + cls }).then((v) => {
       if (this.destroyed) return;
       if (v === 'again') this.start();
       else if (v === 'next') this.onNextLevel(next);
@@ -587,16 +706,23 @@ export class Game {
   }
 
   confetti() {
-    const colors = ['#4f46e5', '#16a34a', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899'];
     for (let i = 0; i < 36; i++) {
+      const round = i % 4 === 0;
+      const w = round ? 8 : 6 + (i % 3) * 2;
+      const hgt = round ? 8 : 10 + (i % 2) * 4;
       this.fx.appendChild(h('span', {
         class: 'confetti',
         style: {
           left: Math.random() * 100 + '%',
-          background: colors[i % colors.length],
+          width: w + 'px',
+          height: hgt + 'px',
+          borderRadius: round ? '50%' : '2px',
+          background: CONFETTI[i % CONFETTI.length],
           '--d': (Math.random() * 0.6).toFixed(2) + 's',
+          '--dur': (1.6 + (i % 5) * 0.15).toFixed(2) + 's',
           '--r': Math.round(Math.random() * 720 - 360) + 'deg',
           '--x': Math.round(Math.random() * 120 - 60) + 'px',
+          '--y': Math.round(Math.random() * 40) + 'vh',
         },
       }));
     }

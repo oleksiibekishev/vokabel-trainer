@@ -1,12 +1,12 @@
 import * as store from './store.js';
-import { t, tList, setLang, detectLang, LANGS, getLang } from './i18n.js';
-import { h, icon, toast, modal, confirmDialog, sfx } from './ui.js';
+import { t, tList, tSplit, setLang, detectLang, LANGS, getLang } from './i18n.js';
+import { h, icon, logo, levelBars, toast, modal, confirmDialog, sfx } from './ui.js';
 import {
   LEVELS, LEVEL_IDS, MIN_WORDS, parseWordList, encodeData, decodeData, listToShare, listFromShare, listIdFor,
 } from './core.js';
 import { Game } from './game.js';
 
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.1.0';
 
 const app = document.getElementById('app');
 let game = null;
@@ -55,65 +55,78 @@ function renderHome() {
   const list = store.currentList();
   const wrap = h('div', { class: 'screen home' });
   wrap.appendChild(h('header', { class: 'topbar home-top' },
-    h('div', { class: 'brand' },
-      h('img', { class: 'brand-logo', src: 'icons/favicon.svg', alt: '' }),
-      h('div', null, h('h1', null, t('appName')), h('p', { class: 'muted' }, t('tagline')))),
+    logo(),
+    h('div', { class: 'brand' }, h('h1', null, t('appName')), h('p', null, t('tagline'))),
     h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('settings'), onclick: () => navigate('settings') }, icon('gear'))));
 
   const banner = installBanner();
   if (banner) wrap.appendChild(banner);
 
   if (!list) {
-    wrap.appendChild(h('section', { class: 'card' }, h('p', null, t('notEnoughWords', { n: MIN_WORDS })),
-      h('button', { class: 'btn primary', onclick: () => navigate('lists') }, t('newList'))));
+    wrap.appendChild(h('div', { class: 'empty-card' },
+      h('span', { class: 'icon-tile', 'aria-hidden': 'true' }, icon('list')),
+      h('span', { class: 'serif' }, t('emptyLists')),
+      h('button', { class: 'btn primary', type: 'button', onclick: () => navigate('lists') }, t('newList'))));
     return wrap;
   }
 
   wrap.appendChild(h('section', { class: 'card list-card' },
     h('div', { class: 'eyebrow' }, t('currentList')),
     h('div', { class: 'list-name' }, list.name),
-    h('div', { class: 'muted' }, t('wordsN', { n: list.words.length })),
-    h('div', { class: 'row' },
-      h('button', { class: 'btn secondary', type: 'button', onclick: () => navigate('words') }, icon('book'), t('showWords')),
-      h('button', { class: 'btn secondary', type: 'button', onclick: () => navigate('lists') }, icon('list'), t('changeList')))));
+    h('div', { class: 'count' }, t('wordsN', { n: list.words.length })),
+    h('div', { class: 'btn-row' },
+      h('button', { class: 'btn outline', type: 'button', onclick: () => navigate('words') }, icon('book'), t('showWords')),
+      h('button', { class: 'btn outline', type: 'button', onclick: () => navigate('lists') }, icon('list'), t('changeList')))));
 
   const enough = list.words.length >= MIN_WORDS;
-  if (!enough) wrap.appendChild(h('p', { class: 'warn' }, t('notEnoughWords', { n: MIN_WORDS })));
+  if (!enough) {
+    wrap.appendChild(h('div', { class: 'notice-err', role: 'alert' }, icon('alert'),
+      h('span', null, t('listTooSmall', { n: list.words.length, min: MIN_WORDS }))));
+  }
   wrap.appendChild(h('div', { class: 'levels' }, LEVEL_IDS.map((lvl) => levelCard(list, lvl, enough))));
-  wrap.appendChild(h('details', { class: 'card rules' },
-    h('summary', null, t('rulesTitle')),
-    h('ul', null, tList('rules').map((r) => h('li', null, r)))));
+
+  const rules = h('details', { class: 'rules', open: !store.settings().rulesClosed },
+    h('summary', null, t('rulesTitle'), icon('chevronDown')),
+    h('ol', null, tList('rules').map((r, i) => h('li', null, h('span', { class: 'num' }, String(i + 1)), h('span', null, r)))));
+  rules.addEventListener('toggle', () => store.setSetting('rulesClosed', !rules.open));
+  wrap.appendChild(rules);
   return wrap;
 }
 
 function levelCard(list, level, enough) {
   const L = LEVELS[level];
   const tm = store.timing(level);
-  const unlocked = store.isUnlocked(list.id, level) && enough;
+  const levelOpen = store.isUnlocked(list.id, level);
+  const playable = levelOpen && enough;
   const p = store.levelProgress(list.id, level);
   const types = ['pairs', 'choice', 'gaps', 'spell'].filter((ty) => L.fixed.includes(ty) || L.pool.includes(ty));
   let status;
-  if (!store.isUnlocked(list.id, level)) {
+  if (!levelOpen) {
     const prev = LEVEL_IDS[LEVEL_IDS.indexOf(level) - 1];
-    status = h('span', { class: 'status locked-text' }, icon('lock'), t('lockedHint', { prev: t('level_' + prev) }));
+    status = h('span', { class: 'level-status locked' }, icon('lock'), h('span', null, t('lockedHint', { prev: t('level_' + prev) })));
   } else if (p.completed) {
-    status = h('span', { class: 'status ok-text' }, t('completedBest', { t: p.bestTimeLeft ?? 0 }));
+    status = h('span', { class: 'level-status ok' }, icon('check'), h('span', null, t('completedBest', { t: p.bestTimeLeft ?? 0 })));
   } else if (p.plays) {
-    status = h('span', { class: 'status' }, t('bestRound', { r: p.bestRound, n: L.rounds }));
+    status = h('span', { class: 'level-status best' }, h('span', null, t('bestRound', { r: p.bestRound, n: L.rounds })));
   } else {
-    status = h('span', { class: 'status muted' }, t('notPlayed'));
+    status = h('span', { class: 'level-status fresh' }, h('span', null, t('notPlayed')));
   }
+  const lockIcon = icon('lock', 'lock-icon');
+  lockIcon.setAttribute('role', 'img');
+  lockIcon.setAttribute('aria-label', t('locked'));
+  lockIcon.removeAttribute('aria-hidden');
   return h('button', {
-    class: 'level-card level-' + level + (unlocked ? '' : ' locked'),
+    class: 'level-card level-' + level + (playable ? '' : ' locked'),
     type: 'button',
-    disabled: !unlocked,
+    disabled: !playable,
     onclick: () => { sfx.unlock(); navigate('game', level); },
   },
-  h('div', { class: 'level-head' },
+  h('span', { class: 'level-head' },
+    levelBars(level),
     h('span', { class: 'level-name' }, t('level_' + level)),
-    unlocked ? h('span', { class: 'play-pill' }, icon('play'), t('play')) : icon('lock', 'lock-icon')),
-  h('div', { class: 'level-meta' }, t('levelMeta', { rounds: L.rounds, start: tm.start, bonus: tm.bonus })),
-  h('div', { class: 'chips' }, types.map((ty) => h('span', { class: 'chip chip-' + ty }, t('type_' + ty)))),
+    playable ? h('span', { class: 'play-pill' }, icon('play'), t('play')) : lockIcon),
+  h('span', { class: 'level-meta' }, t('levelMeta', { rounds: L.rounds, start: tm.start, bonus: tm.bonus })),
+  h('span', { class: 'chips' }, types.map((ty) => h('span', { class: 'chip' }, t('type_' + ty)))),
   status);
 }
 
@@ -128,10 +141,11 @@ function isStandalone() {
 function installBanner() {
   if (isStandalone()) return null;
   if (deferredInstall) {
-    return h('div', { class: 'banner' },
-      h('span', null, t('install')),
+    return h('div', { class: 'card install-card' },
+      icon('download'),
+      h('span', null, t('installAndroid')),
       h('button', {
-        class: 'btn primary small',
+        class: 'btn primary small', type: 'button',
         onclick: async () => {
           const p = deferredInstall;
           deferredInstall = null;
@@ -143,9 +157,10 @@ function installBanner() {
   }
   if (isIos() && !store.settings().iosHintDismissed) {
     return h('div', { class: 'banner' },
-      h('span', null, t('installIos')),
+      icon('iosShare'),
+      h('p', null, t('installIos')),
       h('button', {
-        class: 'icon-btn small', 'aria-label': t('dismiss'),
+        class: 'icon-btn', type: 'button', 'aria-label': t('dismiss'),
         onclick: (e) => { store.setSetting('iosHintDismissed', true); e.currentTarget.closest('.banner').remove(); },
       }, icon('close')));
   }
@@ -157,9 +172,10 @@ function installBanner() {
 function showGame(level) {
   if (game) game.destroy();
   const list = store.currentList();
-  if (!list || !store.isUnlocked(list.id, level)) { show('home'); return; }
+  if (!list || !store.isUnlocked(list.id, level) || list.words.length < MIN_WORDS) { show('home'); return; }
   const root = h('div', { class: 'screen game' });
   app.replaceChildren(root);
+  window.scrollTo(0, 0);
   game = new Game({
     root, list, level,
     onMenu: () => { game = null; goHome(); },
@@ -173,49 +189,56 @@ function showGame(level) {
 function renderLists() {
   const wrap = h('div', { class: 'screen' }, topbar(t('lists')));
   const cur = store.currentList();
-  const rows = store.lists().map((l) => h('div', { class: 'list-row' + (cur && cur.id === l.id ? ' active' : '') },
-    h('button', { class: 'list-main', type: 'button', onclick: () => { store.selectList(l.id); goHome(); } },
-      h('span', { class: 'list-title' }, l.name),
-      h('span', { class: 'muted small' }, t('wordsN', { n: l.words.length })),
-      cur && cur.id === l.id ? h('span', { class: 'badge' }, t('active')) : null),
-    h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('share'), onclick: () => shareList(l) }, icon('share')),
-    h('button', {
-      class: 'icon-btn danger-icon', type: 'button', 'aria-label': t('delete'),
-      onclick: async () => {
-        if (await confirmDialog(t('deleteListTitle'), t('deleteListText', { name: l.name }), t('delete'), true)) {
-          store.deleteList(l.id);
-          show('lists');
-        }
-      },
-    }, icon('trash'))));
-  wrap.appendChild(h('section', { class: 'card stack' }, rows));
+  const all = store.lists();
+  if (all.length) {
+    wrap.appendChild(h('section', { class: 'card list-rows' }, all.map((l) => {
+      const active = cur && cur.id === l.id;
+      return h('div', { class: 'list-row' + (active ? ' active' : '') },
+        h('button', {
+          class: 'list-main', type: 'button', 'aria-current': active ? 'true' : null,
+          onclick: () => { store.selectList(l.id); goHome(); },
+        },
+        h('span', { class: 'list-title' }, l.name, active ? h('span', { class: 'badge' }, t('active')) : null),
+        h('span', { class: 'list-count' }, t('wordsN', { n: l.words.length }))),
+        h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('shareList', { name: l.name }), onclick: () => shareList(l) }, icon('share')),
+        h('button', {
+          class: 'icon-btn err', type: 'button', 'aria-label': t('deleteList', { name: l.name }),
+          onclick: async () => {
+            if (await confirmDialog(t('deleteListTitle'), t('deleteListText', { name: l.name }), t('delete'), { danger: true })) {
+              store.deleteList(l.id);
+              show('lists');
+            }
+          },
+        }, icon('trash')));
+    })));
+  }
   wrap.appendChild(newListForm());
   return wrap;
 }
 
 function newListForm() {
-  const nameInput = h('input', { class: 'field', type: 'text', maxlength: '60', placeholder: t('listName'), 'aria-label': t('listName') });
-  const area = h('textarea', { class: 'field area', rows: '7', placeholder: t('pastePlaceholder'), spellcheck: 'false', 'aria-label': t('orPaste') });
-  const preview = h('div', { class: 'preview' });
+  const nameInput = h('input', { class: 'field', id: 'list-name', type: 'text', maxlength: '60', placeholder: t('namePlaceholder') });
+  const area = h('textarea', { class: 'field area', id: 'list-text', rows: '7', placeholder: t('pastePlaceholder'), spellcheck: 'false' });
+  const preview = h('div', { class: 'preview', hidden: true });
   const fileInput = h('input', { type: 'file', accept: '.txt,.csv,.tsv,text/plain,text/csv', class: 'sr-only', id: 'file-in' });
-  const saveBtn = h('button', { class: 'btn primary wide', type: 'button', disabled: true }, t('saveList'));
+  const saveBtn = h('button', { class: 'btn primary tall', type: 'button', disabled: true }, t('saveList'));
 
   const refresh = () => {
     const r = parseWordList(area.value);
-    preview.replaceChildren();
-    saveBtn.disabled = r.words.length < MIN_WORDS;
-    if (!area.value.trim()) return;
-    preview.appendChild(h('p', { class: r.words.length >= MIN_WORDS ? 'ok-text' : 'warn' },
-      t('recognized', { n: r.words.length }), r.words.length < MIN_WORDS ? ' · ' + t('tooFew', { n: MIN_WORDS }) : ''));
-    if (r.words.length) {
-      preview.appendChild(h('div', { class: 'mini-table' }, r.words.slice(0, 4).map((w) => h('div', { class: 'pair-row' },
-        h('span', { lang: 'en' }, w.en), h('span', { class: 'eq' }, '='), h('span', { lang: 'de' }, w.de)))));
-    }
-    if (r.skipped.length) {
-      preview.appendChild(h('details', { class: 'skipped' },
-        h('summary', null, t('skippedLines', { n: r.skipped.length })),
-        r.skipped.slice(0, 20).map((s) => h('div', { class: 'muted small' }, s))));
-    }
+    const ok = r.words.length >= MIN_WORDS;
+    saveBtn.disabled = !ok;
+    preview.hidden = !area.value.trim();
+    if (preview.hidden) { preview.replaceChildren(); return; }
+    preview.replaceChildren(
+      ok
+        ? h('div', { class: 'preview-status ok' }, icon('check'), t('recognized', { n: r.words.length }))
+        : h('div', { class: 'preview-status err' }, icon('alert'), t('tooFew', { n: MIN_WORDS })),
+      r.words.length ? h('div', { class: 'pair-mini' }, r.words.slice(0, 4).map((w) => h('div', null,
+        h('span', { lang: 'en' }, w.en), h('span', { lang: 'de' }, w.de)))) : null,
+      r.skipped.length ? h('details', { class: 'skipped' },
+        h('summary', null, r.skipped.length === 1 ? t('skippedOne') : t('skippedLines', { n: r.skipped.length }), icon('chevronDown')),
+        r.skipped.slice(0, 20).map((s) => h('div', null, s))) : null,
+    );
   };
   area.addEventListener('input', refresh);
   fileInput.addEventListener('change', async () => {
@@ -227,7 +250,7 @@ function newListForm() {
   });
   saveBtn.addEventListener('click', () => {
     const r = parseWordList(area.value);
-    if (r.words.length < MIN_WORDS) { toast(t('tooFew', { n: MIN_WORDS })); return; }
+    if (r.words.length < MIN_WORDS) return;
     const id = listIdFor(r.words);
     if (store.get().lists[id]) {
       store.selectList(id);
@@ -235,19 +258,22 @@ function newListForm() {
     } else {
       const name = nameInput.value.trim() || 'Liste ' + (store.lists().length + 1);
       store.addList({ id, name, words: r.words, builtin: false });
-      toast(t('listSaved'));
+      toast(t('listSaved'), { icon: 'check' });
     }
     goHome();
   });
 
   return h('section', { class: 'card stack' },
     h('h2', { class: 'card-title' }, t('newList')),
-    h('label', { class: 'btn secondary file-btn', for: 'file-in' }, icon('upload'), t('chooseFile')),
+    h('label', { class: 'btn outline', for: 'file-in' }, icon('upload'), t('chooseFile')),
     fileInput,
-    h('div', { class: 'muted small' }, t('orPaste')),
-    area,
-    h('p', { class: 'muted small' }, t('formatHint')),
-    nameInput,
+    h('div', { class: 'field-group' },
+      h('label', { class: 'field-label', for: 'list-text' }, t('orPaste')),
+      area,
+      h('p', { class: 'hint-small' }, t('formatHint'))),
+    h('div', { class: 'field-group' },
+      h('label', { class: 'field-label', for: 'list-name' }, t('listName')),
+      nameInput),
     preview,
     saveBtn);
 }
@@ -263,8 +289,8 @@ async function shareList(list) {
     await navigator.clipboard.writeText(url);
     toast(t('linkCopied'));
   } catch {
-    const ta = h('textarea', { class: 'field area', rows: '4', readonly: true }, url);
-    modal({ title: t('share'), body: ta, buttons: [{ label: t('done'), value: true, kind: 'primary' }], dismissable: true });
+    const ta = h('textarea', { class: 'field area mono', rows: '4', readonly: true }, url);
+    modal({ title: t('share'), body: ta, buttons: [{ label: t('done'), value: true, kind: 'primary', grow: true }], dismissable: true });
     setTimeout(() => ta.select(), 50);
   }
 }
@@ -287,124 +313,136 @@ async function handleImportLink() {
     toast(t('listExists'));
     return;
   }
-  const ok = await confirmDialog(t('importTitle'), t('importText', { name: incoming.name, n: incoming.words.length }), t('add'));
+  const [pre, name, post] = tSplit('importText', { name: '„' + incoming.name + '“', n: incoming.words.length }, 'name');
+  const ok = await confirmDialog(t('importTitle'), h('p', { class: 'modal-text' }, pre, h('b', null, name), post), t('add'),
+    { icon: { name: 'listPlus', kind: 'accent', extra: 'square' } });
   if (!ok) return;
   store.addList({ id, name: incoming.name, words: incoming.words, builtin: false });
   show('home');
-  toast(t('listSaved'));
+  toast(t('listSaved'), { icon: 'check' });
 }
 
 // ---------- words ----------
 
 function renderWords() {
   const list = store.currentList();
-  const wrap = h('div', { class: 'screen' }, topbar(list ? list.name : t('words')));
+  const wrap = h('div', { class: 'screen' }, topbar(list ? list.name : t('showWords')));
   if (!list) return wrap;
   const st = store.stats(list.id);
   const mk = (id) => (st[id] ? st[id].w || 0 : 0);
-  const seg = h('div', { class: 'segmented' },
+  wrap.appendChild(h('div', { class: 'segmented', role: 'group', 'aria-label': t('sorting') },
     ['order', 'hard'].map((k) => h('button', {
-      class: wordsSort === k ? 'on' : '', type: 'button',
+      class: wordsSort === k ? 'on' : '', type: 'button', 'aria-pressed': String(wordsSort === k),
       onclick: () => { wordsSort = k; show('words'); },
-    }, t(k === 'order' ? 'sortOrder' : 'sortHard'))));
-  let words = list.words.slice();
+    }, t(k === 'order' ? 'sortOrder' : 'sortHard')))));
+  const words = list.words.slice();
   if (wordsSort === 'hard') words.sort((a, b) => mk(b.id) - mk(a.id));
-  const anyMistakes = words.some((w) => mk(w.id) > 0);
-  wrap.appendChild(seg);
-  if (wordsSort === 'hard' && !anyMistakes) wrap.appendChild(h('p', { class: 'muted center' }, t('noMistakes')));
-  wrap.appendChild(h('section', { class: 'card word-table' }, words.map((w) => h('div', { class: 'word-row' },
-    h('span', { class: 'w-en', lang: 'en' }, w.en),
-    h('span', { class: 'w-de', lang: 'de' }, w.de),
-    mk(w.id) ? h('span', { class: 'miss', title: t('mistakes') }, '✗ ' + mk(w.id)) : h('span', { class: 'miss empty' })))));
+  if (wordsSort === 'hard' && !words.some((w) => mk(w.id) > 0)) {
+    wrap.appendChild(h('div', { class: 'info-dashed' }, icon('info'), t('noMistakes')));
+  }
+  wrap.appendChild(h('section', { class: 'word-table' },
+    h('div', { class: 'word-table-head' }, h('span', null, t('wordsHead')), h('span', null, t('mistakesHead'))),
+    words.map((w) => h('div', { class: 'word-row' },
+      h('div', { class: 'words' }, h('span', { class: 'w-en', lang: 'en' }, w.en), h('span', { class: 'w-de', lang: 'de' }, w.de)),
+      mk(w.id)
+        ? h('span', { class: 'miss' }, icon('close'), String(mk(w.id)))
+        : h('span', { class: 'miss none', 'aria-label': t('noMistakesAria') }, '–')))));
   return wrap;
 }
 
 // ---------- settings ----------
 
-function toggleRow(label, key) {
+function switchRow(label, key, hint) {
   const on = !!store.settings()[key];
   return h('div', { class: 'set-row' },
-    h('span', null, label),
+    h('span', { class: 'set-label' }, label, hint ? h('small', null, hint) : null),
     h('button', {
       class: 'switch' + (on ? ' on' : ''), type: 'button', role: 'switch', 'aria-checked': String(on), 'aria-label': label,
       onclick: () => { store.setSetting(key, !on); show('settings'); },
-    }, h('span', { class: 'knob' })));
+    }, h('span', { class: 'track' }, h('span', { class: 'knob' }))));
 }
 
 function renderSettings() {
   const wrap = h('div', { class: 'screen' }, topbar(t('settings')));
-  const s = store.settings();
 
-  wrap.appendChild(h('section', { class: 'card stack' },
-    h('div', { class: 'set-row' }, h('span', null, t('language')),
-      h('div', { class: 'segmented small' }, LANGS.map((l) => h('button', {
-        class: getLang() === l.id ? 'on' : '', type: 'button',
+  wrap.appendChild(h('section', { class: 'card settings-card' },
+    h('div', { class: 'set-row' },
+      h('span', { class: 'set-label' }, t('language')),
+      h('div', { class: 'segmented compact', role: 'group', 'aria-label': t('language') }, LANGS.map((l) => h('button', {
+        class: getLang() === l.id ? 'on' : '', type: 'button', 'aria-pressed': String(getLang() === l.id),
         onclick: () => { store.setSetting('lang', l.id); setLang(l.id); show('settings'); },
       }, l.label)))),
-    toggleRow(t('sound'), 'sound'),
-    'vibrate' in navigator ? toggleRow(t('vibration'), 'vibrate') : null));
+    switchRow(t('sound'), 'sound'),
+    'vibrate' in navigator ? switchRow(t('vibration'), 'vibrate', t('vibrationHint')) : null));
 
-  const timingRows = LEVEL_IDS.map((lvl) => {
+  const timingCells = [
+    h('span'), h('span', { class: 'timing-head' }, t('startTime')), h('span', { class: 'timing-head' }, t('bonusTime')),
+  ];
+  for (const lvl of LEVEL_IDS) {
     const tm = store.timing(lvl);
     const num = (key, val) => h('input', {
-      class: 'field num', type: 'number', inputmode: 'numeric', min: key === 'start' ? '10' : '0', max: key === 'start' ? '600' : '120',
-      value: String(val), 'aria-label': t('level_' + lvl) + ' ' + t(key === 'start' ? 'startTime' : 'bonusTime'),
+      class: 'num-field', type: 'number', inputmode: 'numeric', min: key === 'start' ? '10' : '0', max: key === 'start' ? '600' : '120',
+      value: String(val), 'aria-label': t(key === 'start' ? 'startAria' : 'bonusAria', { level: t('level_' + lvl) }),
       onchange: (e) => { store.setTiming(lvl, key, e.target.value); e.target.value = String(store.timing(lvl)[key]); },
     });
-    return h('div', { class: 'timing-row' },
-      h('span', { class: 'timing-level level-dot-' + lvl }, t('level_' + lvl)),
+    timingCells.push(
+      h('span', { class: 'timing-level lv-' + lvl }, levelBars(lvl, 'md'), t('level_' + lvl)),
       num('start', tm.start),
       num('bonus', tm.bonus));
-  });
+  }
   wrap.appendChild(h('section', { class: 'card stack' },
-    h('h2', { class: 'card-title' }, t('timing')),
-    h('div', { class: 'timing-row timing-head' }, h('span'), h('span', { class: 'muted small' }, t('startTime')), h('span', { class: 'muted small' }, t('bonusTime'))),
-    timingRows,
-    h('button', { class: 'btn secondary', type: 'button', onclick: () => { store.resetTiming(); show('settings'); } }, t('resetTiming'))));
+    h('div', { class: 'section-head' },
+      h('h2', null, t('timing')),
+      h('button', { class: 'btn text', type: 'button', onclick: () => { store.resetTiming(); show('settings'); } }, icon('reset'), t('resetTiming'))),
+    h('div', { class: 'timing' }, timingCells)));
 
-  const codeBox = h('div', { class: 'stack' });
-  const loadArea = h('textarea', { class: 'field area', rows: '3', placeholder: t('pasteCode'), spellcheck: 'false', 'aria-label': t('pasteCode') });
+  const codeBox = h('div', { class: 'code-box', hidden: true });
+  const loadArea = h('textarea', { class: 'field area mono', id: 'code-in', rows: '2', spellcheck: 'false' });
   wrap.appendChild(h('section', { class: 'card stack' },
-    h('h2', { class: 'card-title' }, t('backup')),
-    h('p', { class: 'muted small' }, t('backupHint')),
+    h('div', { class: 'field-group' },
+      h('h2', { class: 'card-title', style: { fontSize: '20px' } }, t('backup')),
+      h('p', { class: 'hint-small', style: { fontSize: '13.5px' } }, t('backupHint'))),
     h('button', {
-      class: 'btn secondary', type: 'button',
+      class: 'btn outline', type: 'button',
       onclick: async () => {
         const code = await encodeData(store.exportState());
-        const ta = h('textarea', { class: 'field area mono', rows: '4', readonly: true }, code);
-        const copyBtn = h('button', {
-          class: 'btn primary', type: 'button',
-          onclick: async () => {
-            try { await navigator.clipboard.writeText(code); toast(t('copied')); } catch { ta.select(); }
-          },
-        }, t('copy'));
-        codeBox.replaceChildren(ta, copyBtn);
+        codeBox.hidden = false;
+        codeBox.replaceChildren(
+          h('div', { class: 'head' },
+            h('span', { class: 'eyebrow' }, t('yourCode')),
+            h('button', {
+              class: 'btn text', type: 'button',
+              onclick: async () => {
+                try { await navigator.clipboard.writeText(code); toast(t('copied'), { icon: 'check' }); } catch { /* select manually */ }
+              },
+            }, icon('copy'), t('copy'))),
+          h('output', null, code));
       },
     }, t('makeCode')),
     codeBox,
-    loadArea,
+    h('div', { class: 'field-group' },
+      h('label', { class: 'field-label', for: 'code-in' }, t('pasteCode')),
+      loadArea),
     h('button', {
-      class: 'btn secondary', type: 'button',
+      class: 'btn outline', type: 'button',
       onclick: async () => {
         let data;
         try { data = await decodeData(loadArea.value.trim()); if (!data || data.v !== 1) throw new Error('x'); } catch { toast(t('badCode')); return; }
-        if (!(await confirmDialog(t('loadCodeTitle'), t('loadCodeText'), t('loadCode'), true))) return;
+        if (!(await confirmDialog(t('loadCodeTitle'), t('loadCodeText'), t('loadCode'), { danger: true }))) return;
         try { store.importState(data); } catch { toast(t('badCode')); return; }
         setLang(store.settings().lang || detectLang());
         show('settings');
-        toast(t('loaded'));
+        toast(t('loaded'), { icon: 'check' });
       },
     }, t('loadCode'))));
 
-  wrap.appendChild(h('section', { class: 'card stack' },
-    h('button', {
-      class: 'btn danger', type: 'button',
-      onclick: async () => {
-        if (await confirmDialog(t('resetTitle'), t('resetText'), t('reset'), true)) { store.resetProgress(); show('settings'); }
-      },
-    }, t('resetProgress'))));
-  wrap.appendChild(h('p', { class: 'muted small center' }, t('version') + ' ' + APP_VERSION));
-  void s;
+  wrap.appendChild(h('button', {
+    class: 'btn danger-soft', type: 'button',
+    onclick: async () => {
+      if (await confirmDialog(t('resetTitle'), t('resetText'), t('reset'), { danger: true })) { store.resetProgress(); show('settings'); }
+    },
+  }, icon('reset'), t('resetProgress')));
+  wrap.appendChild(h('p', { class: 'version' }, t('version') + ' ' + APP_VERSION));
   return wrap;
 }
 
@@ -416,7 +454,7 @@ function registerSW() {
   navigator.serviceWorker.register('./sw.js').catch(() => { /* offline mode unavailable */ });
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!hadController) return;
-    toast(t('updateReady'), { label: t('reload'), onClick: () => location.reload() });
+    toast(t('updateReady'), { action: { label: t('reload'), onClick: () => location.reload() } });
   });
 }
 
@@ -427,6 +465,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
 });
 
 function boot() {
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
   store.load();
   setLang(store.settings().lang || detectLang());
   history.replaceState({ screen: 'home' }, '', location.href);
