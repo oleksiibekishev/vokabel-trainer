@@ -3,28 +3,136 @@
 
 export const LEVEL_IDS = ['easy', 'medium', 'hard'];
 
-// rounds: number of rounds; start: start time (s); bonus: seconds per finished round
+// rounds: number of rounds; start: start time (s); bonus: seconds per finished round;
+// cap: the round bonus fills the timer only up to this limit (s)
 // fixed: types of rounds 1–3 (same words every attempt); pool: types of the random rounds
+// mods: special rounds that can come up from round 4; modMax: at most this many per game
+// kombo: an answer within this many ms after the previous one counts as fast
+// fastSteps: [[from round, factor]] – how much faster the time runs in a "Zeitraffer" round
 export const LEVELS = {
   easy: {
-    rounds: 6, start: 60, bonus: 10, mixed: false, gapRatio: 0.35,
+    rounds: 6, start: 60, bonus: 10, cap: 60, mixed: false, gapRatio: 0.35, keepFirst: true,
     fixed: ['pairs', 'choice', 'pairs'],
     pool: ['pairs', 'pairs', 'choice'],
+    mods: ['wirbel', 'kombo'], modMax: 1, kombo: 3500, fastSteps: [[1, 1.5]],
   },
   medium: {
-    rounds: 10, start: 40, bonus: 10, mixed: true, gapRatio: 0.35,
+    rounds: 10, start: 40, bonus: 10, cap: 40, mixed: true, gapRatio: 0.35, keepFirst: true,
     fixed: ['pairs', 'choice', 'pairs'],
     pool: ['pairs', 'pairs', 'choice', 'choice', 'gaps', 'gaps', 'gaps'],
+    mods: ['wirbel', 'kombo', 'zeitraffer'], modMax: 2, kombo: 3000, fastSteps: [[1, 1.5]],
   },
   hard: {
-    rounds: 15, start: 30, bonus: 10, mixed: true, gapRatio: 0.5,
+    rounds: 15, start: 30, bonus: 10, cap: 30, mixed: true, gapRatio: 0.5, keepFirst: false,
     fixed: ['pairs', 'choice', 'spell'],
     pool: ['pairs', 'pairs', 'pairs', 'choice', 'choice', 'gaps', 'gaps', 'gaps', 'spell', 'spell', 'spell', 'spell'],
+    mods: ['wirbel', 'kombo', 'zeitraffer'], modMax: 3, kombo: 2500, fastSteps: [[1, 1.5]],
   },
+};
+
+/** "Endlos": unlocked after "Schwer". No time limit, the round bonus gets smaller. */
+export const ENDLESS = {
+  start: 30, cap: 0, mixed: true, gapRatio: 0.5, keepFirst: false,
+  bonusSteps: [[1, 10], [11, 8], [21, 6], [31, 5]],
+  pool: LEVELS.hard.pool,
+  mods: ['wirbel', 'kombo', 'zeitraffer'], modMax: Infinity, kombo: 2500, fastSteps: [[1, 1.5], [21, 2]],
+  modChance: 0.25, modChanceGrow: 0.01, modChanceMax: 0.5,
 };
 
 export const ROUND_SIZE = { pairs: 6, choice: 4, gaps: 2, spell: 1 };
 export const MIN_WORDS = 4;
+
+// ---------- time, special rounds ----------
+
+export const MOD_IDS = ['wirbel', 'kombo', 'zeitraffer'];
+/** Which games a special round can be played with. */
+export const MOD_TYPES = { wirbel: ['pairs'], kombo: ['pairs', 'choice'], zeitraffer: ['pairs', 'choice', 'gaps', 'spell'] };
+export const MOD_CHANCE = 0.25;
+export const MOD_FIRST_ROUND = 4;
+export const WIRBEL_EXTRA = 3;
+export const KOMBO_STEP = 5;
+export const KOMBO_MAX = 5;
+
+/** Value of a step table [[from, value], ...] at position i. */
+export function stepValue(steps, i) {
+  let v = steps[0][1];
+  for (const [from, val] of steps) if (i >= from) v = val;
+  return v;
+}
+
+/**
+ * Seconds the round bonus actually adds: it only fills the timer up to the limit.
+ * cap = 0 means no limit (Endlos).
+ */
+export function applyBonus(timeLeft, bonus, cap) {
+  if (!cap) return bonus;
+  return Math.max(0, Math.min(bonus, cap - timeLeft));
+}
+
+/**
+ * Kombo round: the next correct answer. The first answer and every slow one start at ×1,
+ * every fast one raises the multiplier (max ×5) and gives +5 s Extrazeit.
+ */
+export function komboNext(mult, fast) {
+  if (!fast || mult < 1) return { mult: 1, gain: 0 };
+  if (mult >= KOMBO_MAX) return { mult: KOMBO_MAX, gain: 0 };
+  return { mult: mult + 1, gain: KOMBO_STEP };
+}
+
+/**
+ * Special round for round number `round` (1-based) or null.
+ * Never in rounds 1–3, never twice in a row, at most cfg.modMax per game,
+ * only modifiers that work with this game type.
+ */
+export function rollModifier(cfg, round, type, prevMod, count, rnd = Math.random) {
+  if (!cfg.mods || round < MOD_FIRST_ROUND || prevMod || count >= cfg.modMax) return null;
+  const grow = cfg.modChanceGrow || 0;
+  const chance = Math.min(cfg.modChanceMax || 1, (cfg.modChance ?? MOD_CHANCE) + grow * (round - MOD_FIRST_ROUND));
+  if (rnd() >= chance) return null;
+  const options = cfg.mods.filter((m) => MOD_TYPES[m].includes(type));
+  if (!options.length) return null;
+  return options[Math.floor(rnd() * options.length)];
+}
+
+/**
+ * Wirbel: where the new pairs go. freed = the slots of the matched tiles.
+ * Columns (Leicht): { en: [slot…], de: [slot…] } – English stays left, German right.
+ * Mixed grid: { left: [slot…], right: [slot…] } – every pair gets one slot on each side.
+ * Returns [{ w, side, slot }].
+ */
+export function placeNewPairs(freed, words, mixed, rnd = Math.random) {
+  const out = [];
+  if (!mixed) {
+    const en = shuffle(freed.en.slice(), rnd);
+    const de = shuffle(freed.de.slice(), rnd);
+    words.forEach((w, i) => { out.push({ w, side: 'en', slot: en[i] }, { w, side: 'de', slot: de[i] }); });
+    return out;
+  }
+  const left = shuffle(freed.left.slice(), rnd);
+  const right = shuffle(freed.right.slice(), rnd);
+  const half = Math.floor(words.length / 2) + (words.length % 2 && rnd() < 0.5 ? 1 : 0);
+  const enLeft = shuffle(words.map((_, i) => i < half), rnd);
+  words.forEach((w, i) => {
+    out.push({ w, side: enLeft[i] ? 'en' : 'de', slot: left[i] }, { w, side: enLeft[i] ? 'de' : 'en', slot: right[i] });
+  });
+  return out;
+}
+
+// ---------- Fehlertraining ----------
+
+export const TRAINING_STEPS = ['choice', 'gaps', 'spell'];
+
+/** The three games for one word; words too short for the gaps game get a second choice question. */
+export function trainingTypes(w) {
+  const gapsOk = wordFilterFor('gaps')(w);
+  return TRAINING_STEPS.map((ty) => (ty === 'gaps' && !gapsOk ? 'choice' : ty));
+}
+
+/** Index of the next word to ask: the first one in the queue that is not the word just asked. */
+export function trainingPick(queue, lastId) {
+  const i = queue.findIndex((it) => it.w.id !== lastId);
+  return i < 0 ? 0 : i;
+}
 
 const SEPARATORS = ['\t', ' – ', ' — ', ' - ', ' | ', ';'];
 
@@ -357,6 +465,11 @@ export function pickDistractors(words, target, field, k, rnd = Math.random, prom
     if (out.length >= k) break;
   }
   return out;
+}
+
+/** More round types for Endlos: the pool, shuffled. */
+export function endlessTypes(rnd = Math.random) {
+  return shuffle(ENDLESS.pool.slice(), rnd);
 }
 
 /** Plan of round types: 3 fixed rounds + shuffled random rounds. */

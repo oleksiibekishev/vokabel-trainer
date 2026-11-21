@@ -56,6 +56,13 @@ const ICONS = {
   keyboard: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/><path d="M8 12h.01"/><path d="M12 12h.01"/><path d="M16 12h.01"/><path d="M7 16h10"/>',
   arrowRight: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
   chevronDown: '<path d="m6 9 6 6 6-6"/>',
+  // special rounds and modes – placeholders until the own icons are designed
+  wirbel: '<path d="M21 4H3"/><path d="M18 8H6"/><path d="M19 12H9"/><path d="M16 16h-6"/><path d="M11 20H9"/>',
+  kombo: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
+  zeitraffer: '<path d="M13 19 22 12 13 5z"/><path d="M2 19 11 12 2 5z"/>',
+  extra: '<circle cx="12" cy="13" r="8"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/><path d="M12 10v6"/><path d="M9 13h6"/>',
+  endless: '<path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z"/>',
+  training: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
 };
 const FILLED = new Set(['play', 'pause', 'star']);
 
@@ -203,6 +210,10 @@ export const sfx = {
   bad() {
     if (store.settings().sound) { tone(180, 0.28, 'square', 0, 0.06); tone(140, 0.3, 'square', 0.12, 0.05); }
     if (store.settings().vibrate && navigator.vibrate) navigator.vibrate([90, 60, 160]);
+  },
+  /** Kombo step: the tone rises with the multiplier. */
+  kombo(mult) {
+    if (store.settings().sound) tone(660 + mult * 110, 0.1, 'triangle', 0.04, 0.09);
   },
   win() {
     if (!store.settings().sound) return;

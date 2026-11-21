@@ -184,10 +184,47 @@ export function renewFixedRounds(listId, level, words) {
   save();
 }
 
+// ---------- Endlos ----------
+
+export function endlessUnlocked(listId) {
+  return levelProgress(listId, 'hard').completed;
+}
+
+export function endlessProgress(listId) {
+  const p = state.progress[listId] || {};
+  return p.endless || { best: 0, plays: 0 };
+}
+
+/** rounds = finished rounds. Returns { newRecord, best, prev } */
+export function recordEndless(listId, rounds) {
+  const p = (state.progress[listId] = state.progress[listId] || {});
+  const cur = endlessProgress(listId);
+  const newRecord = rounds > (cur.best || 0);
+  p.endless = { best: Math.max(cur.best || 0, rounds), plays: (cur.plays || 0) + 1 };
+  save();
+  return { newRecord: newRecord && (cur.best || 0) > 0, best: p.endless.best, prev: cur.best || 0 };
+}
+
 // ---------- mistake statistics ----------
 
 export function stats(listId) {
   return state.stats[listId] || {};
+}
+
+/** Words with mistakes, most mistakes first (for Fehlertraining). */
+export function mistakeWords(listId, words) {
+  const st = stats(listId);
+  const mk = (id) => (st[id] ? st[id].w || 0 : 0);
+  return words.filter((w) => mk(w.id) > 0).sort((a, b) => mk(b.id) - mk(a.id));
+}
+
+/** Fehlertraining: the word was answered right three times – its mistake counter starts at 0 again. */
+export function clearMistakes(listId, wordId) {
+  const e = state.stats[listId] && state.stats[listId][wordId];
+  if (!e) return;
+  e.w = 0;
+  e.cleared = (e.cleared || 0) + 1;
+  save();
 }
 
 export function bumpStat(listId, wordId, ok) {
@@ -208,11 +245,15 @@ export function setSetting(key, value) {
   save();
 }
 
+/** Start time, round bonus and time limit of a level (own values from the settings or the defaults). */
 export function timing(level) {
   const d = LEVELS[level];
   const o = state.settings.timing[level] || {};
   const clamp = (v, lo, hi, def) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : def);
-  return { start: clamp(o.start, 10, 600, d.start), bonus: clamp(o.bonus, 0, 120, d.bonus) };
+  const start = clamp(o.start, 10, 600, d.start);
+  // without an own limit the limit follows the start time (the defaults are equal)
+  const cap = Math.max(start, clamp(o.cap, 10, 600, start === d.start ? d.cap : start));
+  return { start, bonus: clamp(o.bonus, 0, 120, d.bonus), cap };
 }
 
 export function setTiming(level, key, value) {

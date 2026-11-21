@@ -28,6 +28,8 @@ async function main() {
   const browser = await chromium.launch();
   const iphone = { ...devices['iPhone 13'], deviceScaleFactor: 1 };
   const ctx = await browser.newContext({ ...iphone, serviceWorkers: 'block', locale: 'de-DE' });
+  // special rounds are random – off for the normal flows, forced where they are tested
+  await ctx.addInitScript(() => { window.__vtMods = 'off'; });
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -57,20 +59,31 @@ async function main() {
     assert.equal(leftLangs.size, 2, 'left column mixes both languages');
   }
 
+  const seq = () => page.evaluate(() => window.__vtGame.qSeq);
+  const roundOver = (s0) => page.evaluate((s) => window.__vtGame.qSeq !== s || window.__vtGame.roundOver || !!document.querySelector('.modal'), s0);
+  const waitBanner = () => page.waitForFunction(() => !window.__vtGame || !window.__vtGame.holds.has('mod'));
+
   async function solvePairs() {
     await checkPairColumns();
-    const handles = await page.locator('.tile').elementHandles();
-    const items = [];
-    for (const el of handles) {
-      items.push({ el, side: await el.getAttribute('data-side'), text: (await el.textContent()).trim() });
-    }
-    const en = items.filter((x) => x.side === 'en');
-    const de = items.filter((x) => x.side === 'de');
-    for (const e of en) {
-      const w = byEn.get(e.text);
-      const d = de.find((x) => isDe(w, x.text));
-      await e.el.click();
-      await d.el.click();
+    const s0 = await seq();
+    // several passes: in a Wirbel round 3 new pairs come in after the first 3
+    for (let pass = 0; pass < 4; pass++) {
+      const handles = await page.locator('.tile:not(.done):not(.wirbel-out)').elementHandles();
+      const items = [];
+      for (const el of handles) {
+        items.push({ el, side: await el.getAttribute('data-side'), text: (await el.textContent()).trim() });
+      }
+      const en = items.filter((x) => x.side === 'en');
+      const de = items.filter((x) => x.side === 'de');
+      for (const e of en) {
+        const w = byEn.get(e.text);
+        const d = de.find((x) => isDe(w, x.text));
+        if (!d) continue;
+        await e.el.click();
+        await d.el.click();
+      }
+      if (await roundOver(s0)) return;
+      await page.waitForTimeout(650);
     }
   }
 
@@ -93,9 +106,7 @@ async function main() {
     }
   }
 
-  async function solveGaps(mistake = false) {
-    for (let k = 0; k < 2; k++) {
-      const roundBefore = await roundText();
+  async function gapsOne(mistake = false) {
       const prompt = (await page.locator('.typing .prompt-card .word').textContent()).trim();
       const slots = page.locator('.gapword .cell');
       const cnt = await slots.count();
@@ -110,9 +121,28 @@ async function main() {
       if (mistake) letters = letters.slice(0, -1) + (letters.slice(-1) === 'x' ? 'y' : 'x');
       await page.locator('.gap-input').fill(letters);
       await page.keyboard.press('Enter');
+  }
+
+  async function solveGaps(mistake = false) {
+    for (let k = 0; k < 2; k++) {
+      const roundBefore = await roundText();
+      await gapsOne(mistake);
       await page.waitForTimeout(150);
       if (mistake || (await roundText()) !== roundBefore) return;
     }
+  }
+
+  /** One multiple-choice question (right or wrong answer). */
+  async function choiceOne(wrong = false) {
+    const prompt = (await page.locator('.choice .prompt-card .word').textContent()).trim();
+    const fromDe = byDe.has(prompt);
+    const w = fromDe ? byDe.get(prompt) : byEn.get(prompt);
+    for (const o of await page.locator('.option').elementHandles()) {
+      const text = (await o.textContent()).trim();
+      const right = fromDe ? isEn(w, text) : isDe(w, text);
+      if (right !== wrong) { await o.click(); return; }
+    }
+    throw new Error('no option for ' + prompt);
   }
 
   async function solveSpell(typo = null) {
@@ -122,8 +152,11 @@ async function main() {
     await page.locator('.typing .btn.primary').click();
   }
 
+  const boardType = async () => (await page.locator('.board').getAttribute('class')).replace('board board-', '').split(' ')[0];
+
   async function playRound() {
-    const type = (await page.locator('.board').getAttribute('class')).replace('board board-', '').split(' ')[0];
+    await waitBanner();
+    const type = await boardType();
     if (type === 'pairs') await solvePairs();
     else if (type === 'choice') await solveChoice();
     else if (type === 'gaps') await solveGaps();
@@ -350,6 +383,190 @@ async function main() {
   await page.locator('.btn', { hasText: 'Sicherungscode erstellen' }).click();
   const code = (await page.locator('.code-box output').textContent()).trim();
   assert.ok(code.startsWith('z') || code.startsWith('p'));
+
+  // ---------- 8a. time limit, Kombo and Extrazeit (Leicht, Kombo forced in round 4) ----------
+  const setState = (fn) => page.evaluate(fn);
+  await setState(() => {
+    const k = 'vokabeltrainer.v1';
+    const s = JSON.parse(localStorage.getItem(k));
+    s.settings.timing = {};
+    localStorage.setItem(k, JSON.stringify(s));
+  });
+  await page.reload();
+  await page.waitForSelector('.home');
+  assert.ok((await page.locator('.level-card.level-hard .level-meta').textContent()).includes('max. 30 s'), 'level card shows the limit');
+  await page.evaluate(() => { window.__vtMods = { 4: 'kombo' }; });
+  await page.locator('.level-card.level-easy').click();
+  await page.waitForSelector('.tile');
+  await playRound();
+  await page.waitForSelector('.bonus-chip.capped');
+  assert.ok((await page.locator('.bonus-chip').textContent()).includes('voll'), 'bonus only fills up to the limit');
+  assert.ok(await page.evaluate(() => window.__vtGame.timeLeft <= 60000), 'never above 60 s in Leicht');
+  for (let r = 2; r <= 3; r++) {
+    await page.waitForFunction((rr) => document.querySelector('.game-round').textContent.startsWith('Runde ' + rr), r);
+    await playRound();
+  }
+  await page.waitForFunction(() => document.querySelector('.game-round').textContent.startsWith('Runde 4'));
+  await page.waitForSelector('.mod-banner.mod-kombo');
+  await shot(page, '20-kombo-banner');
+  await playRound();
+  const reserve = await page.evaluate(() => window.__vtGame.reserve);
+  assert.ok(reserve >= 15000, 'fast answers in a Kombo round give at least +15 s Extrazeit, got ' + reserve);
+  await page.waitForFunction(() => document.querySelector('.game-round').textContent.startsWith('Runde 5'));
+  assert.ok(await page.locator('.reserve-chip').isVisible(), 'Extrazeit is shown next to the timer');
+  assert.ok(await page.evaluate(() => window.__vtGame.timeLeft <= 60000), 'Extrazeit is kept apart from the normal time');
+  await shot(page, '21-extrazeit');
+  await page.evaluate(() => { window.__vtGame.timeLeft = 200; });
+  await page.waitForSelector('.notice.extra-flash');
+  assert.ok(await page.evaluate(() => window.__vtGame.timeLeft > 10000 && !window.__vtGame.ended), 'Extrazeit takes over when the time is up');
+  await page.locator('.game-top .icon-btn').click();
+  await page.locator('.modal .btn', { hasText: 'Beenden' }).click();
+  await page.waitForSelector('.home');
+
+  // ---------- 8b. Wirbel: after 3 pairs, 3 new ones come in the same places ----------
+  await page.evaluate(() => { window.__vtMods = { 4: 'wirbel' }; });
+  await page.locator('.level-card.level-easy').click();
+  await page.waitForSelector('.tile');
+  for (let r = 1; r <= 3; r++) {
+    await playRound();
+    await page.waitForFunction((rr) => document.querySelector('.game-round').textContent.startsWith('Runde ' + rr), r + 1);
+  }
+  await page.waitForSelector('.mod-banner.mod-wirbel');
+  await shot(page, '22-wirbel-banner');
+  await waitBanner();
+  assert.equal(await page.locator('.mod-chip').textContent(), 'Wirbel0/9');
+  const enTilesW = await page.locator('.tile[data-side=en]').elementHandles();
+  for (let i = 0; i < 3; i++) {
+    const e = enTilesW[i];
+    const w = byEn.get((await e.textContent()).trim());
+    for (const d of await page.locator('.tile[data-side=de]:not(.done)').elementHandles()) {
+      if (isDe(w, (await d.textContent()).trim())) { await e.click(); await d.click(); break; }
+    }
+  }
+  await page.waitForSelector('.tile.wirbel-in');
+  await page.waitForTimeout(450);
+  assert.equal(await page.locator('.tile.wirbel-in').count(), 6, '3 new pairs');
+  assert.equal(await page.locator('.tile').count(), 12, 'the board keeps its size');
+  assert.equal(await page.locator('.tile.done').count(), 0, 'matched pairs are gone');
+  const cols = await page.locator('.pairs.cols').evaluate((g) => [...g.children].map((c, i) => ({ i, side: c.dataset.side })).filter((c) => c.side));
+  assert.ok(cols.every((c) => (c.side === 'en') === (c.i % 2 === 0)), 'Leicht: English stays in the left column');
+  assert.equal(await page.locator('.mod-chip .mod-extra').textContent(), '3/9');
+  await shot(page, '23-wirbel-new');
+  await solvePairs();
+  await page.waitForFunction(() => document.querySelector('.game-round').textContent.startsWith('Runde 5'));
+  await page.locator('.game-top .icon-btn').click();
+  await page.locator('.modal .btn', { hasText: 'Beenden' }).click();
+  await page.waitForSelector('.home');
+
+  // ---------- 8c. Zeitraffer (Mittel): the time runs 1.5× as fast ----------
+  await page.evaluate(() => { window.__vtMods = { 4: 'zeitraffer' }; });
+  await page.locator('.level-card.level-medium').click();
+  await page.waitForSelector('.tile');
+  for (let r = 1; r <= 3; r++) {
+    await playRound();
+    await page.waitForFunction((rr) => document.querySelector('.game-round').textContent.startsWith('Runde ' + rr), r + 1);
+  }
+  await page.waitForSelector('.mod-banner.mod-zeitraffer');
+  await waitBanner();
+  assert.ok(await page.locator('.game.mod-fast').count(), 'time bar shows the fast time');
+  assert.ok((await page.locator('.mod-chip').textContent()).includes('1,5×'));
+  const tA = await page.evaluate(() => window.__vtGame.timeLeft);
+  await page.waitForTimeout(1000);
+  const tB = await page.evaluate(() => window.__vtGame.timeLeft);
+  assert.ok(tA - tB > 1300 && tA - tB < 1800, 'about 1.5 s per second, got ' + (tA - tB));
+  await shot(page, '24-zeitraffer');
+  await page.locator('.game-top .icon-btn').click();
+  await page.locator('.modal .btn', { hasText: 'Beenden' }).click();
+  await page.waitForSelector('.home');
+
+  // ---------- 8d. Endlos: unlocked after Schwer, no limit, smaller bonus from round 11 ----------
+  await page.evaluate(() => { window.__vtMods = 'off'; });
+  assert.ok(await page.locator('.mode-card.mode-endless').isDisabled(), 'Endlos is locked before Schwer');
+  await setState(() => {
+    const k = 'vokabeltrainer.v1';
+    const s = JSON.parse(localStorage.getItem(k));
+    s.progress[s.currentListId].hard = { completed: true, bestTimeLeft: 5, bestRound: 15, plays: 1 };
+    localStorage.setItem(k, JSON.stringify(s));
+  });
+  await page.reload();
+  await page.waitForSelector('.home');
+  await shot(page, '25-home-modes');
+  await page.locator('.mode-card.mode-endless').click();
+  await page.waitForSelector('.board');
+  assert.equal(await roundText(), 'Runde 1');
+  for (let r = 1; r <= 10; r++) {
+    await playRound();
+    await page.waitForFunction((rr) => window.__vtGame.roundIdx === rr, r);
+    if (r === 1) {
+      await page.waitForTimeout(950);
+      assert.ok(await page.evaluate(() => window.__vtGame.timeLeft > 30000), 'Endlos: no limit, time can go above 30 s');
+    }
+  }
+  await page.waitForSelector('.notice', { hasText: 'Bonus jetzt +8 s' });
+  await shot(page, '26-endless-bonus');
+  await waitBanner();
+  const typeE = await boardType();
+  if (typeE === 'pairs') {
+    const e = page.locator('.tile[data-side=en]').first();
+    const w = byEn.get((await e.textContent()).trim());
+    await e.click();
+    for (const d of await page.locator('.tile[data-side=de]').elementHandles()) {
+      if (!isDe(w, (await d.textContent()).trim())) { await d.click(); break; }
+    }
+  } else if (typeE === 'choice') await choiceOne(true);
+  else if (typeE === 'gaps') await gapsOne(true);
+  else await solveSpell('qqqq');
+  await page.waitForSelector('.modal-fail .endless-sum');
+  assert.ok((await page.locator('.endless-sum').textContent()).includes('Du hast 10 Runden geschafft'));
+  await shot(page, '27-endless-over');
+  await page.locator('.modal .btn', { hasText: 'Menü' }).click();
+  await page.waitForSelector('.home');
+  assert.ok((await page.locator('.mode-card.mode-endless').textContent()).includes('Rekord: 10 Runden'));
+
+  // ---------- 8e. Fehlertraining: no timer, every word 3× right, a mistake brings the word back later ----------
+  const trainingCard = page.locator('.mode-card.mode-training');
+  assert.ok(!(await trainingCard.isDisabled()), 'there are words with mistakes');
+  const nMistakes = Number((await trainingCard.locator('.mode-status').textContent()).replace(/\D/g, ''));
+  assert.ok(nMistakes >= 2);
+  await trainingCard.click();
+  await page.waitForSelector('.board');
+  assert.equal(await roundText(), 'Noch ' + nMistakes + ' Wörter');
+  assert.ok(!(await page.locator('.timer').isVisible()), 'no timer');
+  await shot(page, '28-training');
+  let answered = 0;
+  let mistakeDone = false;
+  for (let i = 0; i < nMistakes * 3 + 10; i++) {
+    if (await page.locator('.modal-win').count()) break;
+    const s0 = await seq();
+    const type = await boardType();
+    if (!mistakeDone && type === 'choice') {
+      await choiceOne(true);
+      await page.waitForSelector('.modal-fail');
+      assert.ok((await page.locator('.modal').textContent()).includes('kommt später nochmal'));
+      await shot(page, '29-training-wrong');
+      await page.locator('.modal .btn', { hasText: 'Weiter' }).click();
+      mistakeDone = true;
+    } else if (type === 'choice') await choiceOne();
+    else if (type === 'gaps') await gapsOne();
+    else await solveSpell();
+    answered++;
+    await page.waitForFunction((s) => window.__vtGame.qSeq !== s || document.querySelector('.modal-win'), s0);
+  }
+  await page.waitForSelector('.modal-win');
+  assert.ok(mistakeDone, 'a mistake was tested');
+  assert.ok((await page.locator('.modal-win').textContent()).includes('Alle Fehlerwörter geübt'));
+  assert.ok(answered >= nMistakes * 3, 'every word needs 3 right answers');
+  await page.locator('.modal .btn', { hasText: 'Menü' }).click();
+  await page.waitForSelector('.home');
+  assert.ok(await page.locator('.mode-card.mode-training').isDisabled(), 'no words with mistakes left');
+  assert.ok((await page.locator('.mode-card.mode-training').textContent()).includes('Keine Fehlerwörter'));
+
+  // settings: limit column
+  await page.locator('.home-top .icon-btn').click();
+  await page.waitForSelector('.timing');
+  assert.equal(await page.locator('.timing .num-field').count(), 9, 'start, bonus and limit for 3 levels');
+  await page.goBack();
+  await page.waitForSelector('.home');
 
   // ---------- 8. Android back button during a game asks before quitting ----------
   await page.goBack();

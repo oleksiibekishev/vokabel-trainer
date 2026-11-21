@@ -6,7 +6,7 @@ import {
 } from './core.js';
 import { Game } from './game.js';
 
-export const APP_VERSION = '1.4.0';
+export const APP_VERSION = '1.5.0';
 
 const app = document.getElementById('app');
 let game = null;
@@ -95,7 +95,42 @@ function renderHome() {
   rules.addEventListener('toggle', () => store.setSetting('rulesClosed', !rules.open));
   wrap.appendChild(rules);
   wrap.appendChild(h('div', { class: 'levels' }, LEVEL_IDS.map((lvl) => levelCard(list, lvl, enough))));
+  wrap.appendChild(modesSection(list, enough));
   return wrap;
+}
+
+/** Endlos and Fehlertraining below the levels. */
+function modesSection(list, enough) {
+  const endlessOpen = store.endlessUnlocked(list.id);
+  const ep = store.endlessProgress(list.id);
+  const mistakes = store.mistakeWords(list.id, list.words).length;
+  const card = ({ id, playable, meta, status, statusCls }) => h('button', {
+    class: 'mode-card mode-' + id + (playable ? '' : ' locked'),
+    type: 'button',
+    disabled: !playable,
+    onclick: () => { sfx.unlock(); navigate('game', id); },
+  },
+  h('span', { class: 'mode-icon-tile', 'aria-hidden': 'true' }, icon(id)),
+  h('span', { class: 'mode-body' },
+    h('span', { class: 'mode-name' }, t('level_' + id)),
+    h('span', { class: 'mode-meta' }, meta),
+    h('span', { class: 'mode-status ' + statusCls }, status)),
+  playable ? h('span', { class: 'play-pill small', 'aria-hidden': 'true' }, icon('play')) : icon('lock', 'lock-icon'));
+  let endlessStatus;
+  let endlessCls = 'fresh';
+  if (!endlessOpen) { endlessStatus = t('endlessLocked'); endlessCls = 'locked'; }
+  else if (ep.best > 0) { endlessStatus = ep.best === 1 ? t('endlessBestOne') : t('endlessBest', { n: ep.best }); endlessCls = 'best'; }
+  else endlessStatus = t('notPlayed');
+  return h('section', { class: 'modes', 'aria-label': t('moreModes') },
+    h('h2', { class: 'modes-title' }, t('moreModes')),
+    card({ id: 'endless', playable: endlessOpen && enough, meta: t('endlessMeta'), status: endlessStatus, statusCls: endlessCls }),
+    card({
+      id: 'training',
+      playable: mistakes > 0 && enough,
+      meta: t('trainingMeta'),
+      status: mistakes === 0 ? t('trainingEmpty') : mistakes === 1 ? t('trainingCountOne') : t('trainingCount', { n: mistakes }),
+      statusCls: mistakes ? 'count' : 'fresh',
+    }));
 }
 
 function levelCard(list, level, enough) {
@@ -130,7 +165,7 @@ function levelCard(list, level, enough) {
     levelBars(level),
     h('span', { class: 'level-name' }, t('level_' + level)),
     playable ? h('span', { class: 'play-pill' }, icon('play'), t('play')) : lockIcon),
-  h('span', { class: 'level-meta' }, t('levelMeta', { rounds: L.rounds, start: tm.start, bonus: tm.bonus })),
+  h('span', { class: 'level-meta' }, t('levelMeta', { rounds: L.rounds, start: tm.start, bonus: tm.bonus, cap: tm.cap })),
   h('span', { class: 'chips' }, types.map((ty) => h('span', { class: 'chip' }, t('type_' + ty)))),
   status);
 }
@@ -177,7 +212,11 @@ function installBanner() {
 function showGame(level) {
   if (game) game.destroy();
   const list = store.currentList();
-  if (!list || !store.isUnlocked(list.id, level) || list.words.length < MIN_WORDS) { show('home'); return; }
+  const allowed = list && list.words.length >= MIN_WORDS && (
+    level === 'endless' ? store.endlessUnlocked(list.id)
+      : level === 'training' ? store.mistakeWords(list.id, list.words).length > 0
+        : LEVEL_IDS.includes(level) && store.isUnlocked(list.id, level));
+  if (!allowed) { show('home'); return; }
   const root = h('div', { class: 'screen game' });
   app.replaceChildren(root);
   window.scrollTo(0, 0);
@@ -384,18 +423,26 @@ function renderSettings() {
 
   const timingCells = [
     h('span'), h('span', { class: 'timing-head' }, t('startTime')), h('span', { class: 'timing-head' }, t('bonusTime')),
+    h('span', { class: 'timing-head' }, t('limitTime')),
   ];
+  const ARIA = { start: 'startAria', bonus: 'bonusAria', cap: 'limitAria' };
+  const fields = {};
   for (const lvl of LEVEL_IDS) {
     const tm = store.timing(lvl);
     const num = (key, val) => h('input', {
-      class: 'num-field', type: 'number', inputmode: 'numeric', min: key === 'start' ? '10' : '0', max: key === 'start' ? '600' : '120',
-      value: String(val), 'aria-label': t(key === 'start' ? 'startAria' : 'bonusAria', { level: t('level_' + lvl) }),
-      onchange: (e) => { store.setTiming(lvl, key, e.target.value); e.target.value = String(store.timing(lvl)[key]); },
+      class: 'num-field', type: 'number', inputmode: 'numeric', min: key === 'bonus' ? '0' : '10', max: key === 'bonus' ? '120' : '600',
+      value: String(val), 'aria-label': t(ARIA[key], { level: t('level_' + lvl) }),
+      onchange: (e) => {
+        store.setTiming(lvl, key, e.target.value);
+        // the limit is never below the start time, so both fields are refreshed
+        const now = store.timing(lvl);
+        for (const k of Object.keys(ARIA)) fields[lvl + k].value = String(now[k]);
+      },
     });
+    for (const k of Object.keys(ARIA)) fields[lvl + k] = num(k, tm[k]);
     timingCells.push(
       h('span', { class: 'timing-level lv-' + lvl }, levelBars(lvl, 'md'), t('level_' + lvl)),
-      num('start', tm.start),
-      num('bonus', tm.bonus));
+      fields[lvl + 'start'], fields[lvl + 'bonus'], fields[lvl + 'cap']);
   }
   wrap.appendChild(h('section', { class: 'card stack' },
     h('div', { class: 'section-head' },

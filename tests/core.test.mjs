@@ -5,6 +5,7 @@ import {
   parseWordList, checkAnswer, answerVariants, displayForms, diffWords, closestForm, makeGaps,
   pickWords, pickDistractors, buildTypePlan, createFixedRounds, fixedRoundsValid, LEVELS,
   encodeData, decodeData, listToShare, listFromShare, primaryForm, answerDiff, variants, allVariants, gapTargets,
+  ENDLESS, MOD_TYPES, stepValue, applyBonus, komboNext, rollModifier, placeNewPairs, trainingTypes, trainingPick,
 } from '../js/core.js';
 import { BUILTIN_LISTS } from '../js/builtin-lists.js';
 
@@ -179,4 +180,100 @@ test('share codes round-trip and reject garbage', async () => {
   assert.deepEqual(back.words, words);
   await assert.rejects(() => decodeData('xabc'));
   assert.throws(() => listFromShare({ v: 1, w: [] }));
+});
+
+test('time limit: the round bonus fills only up to the limit, Endlos has none', () => {
+  assert.deepEqual(['easy', 'medium', 'hard'].map((l) => LEVELS[l].cap), [60, 40, 30]);
+  for (const l of ['easy', 'medium', 'hard']) assert.equal(LEVELS[l].cap, LEVELS[l].start, l + ': limit = start time');
+  assert.equal(applyBonus(25, 10, 30), 5);
+  assert.equal(applyBonus(18, 10, 30), 10);
+  assert.equal(applyBonus(30, 10, 30), 0);
+  assert.equal(applyBonus(42, 10, 30), 0, 'above the limit (Extrazeit) nothing is taken away');
+  assert.equal(applyBonus(95, 8, 0), 8, 'no limit in Endlos');
+  assert.equal(ENDLESS.cap, 0);
+});
+
+test('Endlos: bonus gets smaller, Zeitraffer gets faster', () => {
+  const bonus = (r) => stepValue(ENDLESS.bonusSteps, r);
+  assert.deepEqual([1, 10, 11, 20, 21, 30, 31, 99].map(bonus), [10, 10, 8, 8, 6, 6, 5, 5]);
+  assert.deepEqual([1, 20, 21, 50].map((r) => stepValue(ENDLESS.fastSteps, r)), [1.5, 1.5, 2, 2]);
+  assert.equal(stepValue(LEVELS.hard.fastSteps, 9), 1.5);
+});
+
+test('Kombo: ×2 +5 s, ×3 +10 s, ×4 +15 s, ×5 +20 s; slow answers start again at ×1', () => {
+  const run = (fasts) => {
+    let mult = 0;
+    let total = 0;
+    const seen = [];
+    for (const f of fasts) {
+      const r = komboNext(mult, f);
+      mult = r.mult;
+      total += r.gain;
+      seen.push(mult);
+    }
+    return { total, seen };
+  };
+  const all = run([true, true, true, true, true, true]);
+  assert.deepEqual(all.seen, [1, 2, 3, 4, 5, 5], 'first answer ×1, then up to ×5');
+  assert.equal(all.total, 20, '6 pairs: at most +20 s');
+  assert.equal(run([true, true, true, true]).total, 15, 'choice (4 answers): at most ×4 = +15 s');
+  const broken = run([true, true, false, true]);
+  assert.deepEqual(broken.seen, [1, 2, 1, 2]);
+  assert.equal(broken.total, 10);
+});
+
+test('special rounds: from round 4, never twice in a row, limited per game, only fitting games', () => {
+  for (const lvl of ['easy', 'medium', 'hard']) {
+    const cfg = LEVELS[lvl];
+    for (let g = 0; g < 2000; g++) {
+      let prev = null;
+      let count = 0;
+      for (let round = 1; round <= cfg.rounds; round++) {
+        const type = round <= 3 ? cfg.fixed[round - 1] : cfg.pool[Math.floor(Math.random() * cfg.pool.length)];
+        const m = rollModifier(cfg, round, type, prev, count);
+        if (round <= 3) assert.equal(m, null);
+        if (m) {
+          assert.equal(prev, null, 'never two special rounds in a row');
+          assert.ok(MOD_TYPES[m].includes(type), m + ' fits ' + type);
+          assert.ok(cfg.mods.includes(m));
+          count++;
+        }
+        prev = m;
+      }
+      assert.ok(count <= cfg.modMax);
+    }
+  }
+  assert.ok(!LEVELS.easy.mods.includes('zeitraffer'), 'no Zeitraffer in Leicht');
+  assert.equal(rollModifier(LEVELS.medium, 5, 'gaps', null, 0, () => 0), 'zeitraffer', 'gaps rounds can only be Zeitraffer');
+  assert.equal(rollModifier(LEVELS.medium, 5, 'pairs', null, 0, () => 0.3), null, '25 % chance');
+  // Endlos: the chance grows up to 50 %
+  assert.equal(rollModifier(ENDLESS, 4, 'pairs', null, 0, () => 0.3), null);
+  assert.notEqual(rollModifier(ENDLESS, 30, 'pairs', null, 99, () => 0.45), null);
+  assert.equal(rollModifier(ENDLESS, 200, 'pairs', null, 99, () => 0.55), null);
+});
+
+test('Wirbel: new pairs go into the freed places, split like the rest of the board', () => {
+  const ws = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+  for (let i = 0; i < 200; i++) {
+    const cols = placeNewPairs({ en: ['e1', 'e2', 'e3'], de: ['d1', 'd2', 'd3'] }, ws, false);
+    assert.equal(cols.length, 6);
+    assert.ok(cols.every((x) => (x.side === 'en' ? x.slot.startsWith('e') : x.slot.startsWith('d'))), 'columns: English stays left');
+    assert.equal(new Set(cols.map((x) => x.slot)).size, 6);
+    const mixed = placeNewPairs({ left: ['l1', 'l2', 'l3'], right: ['r1', 'r2', 'r3'] }, ws, true);
+    for (const w of ws) {
+      const two = mixed.filter((x) => x.w === w);
+      assert.equal(two.length, 2);
+      assert.notEqual(two[0].side, two[1].side);
+      assert.ok(two.some((x) => x.slot[0] === 'l') && two.some((x) => x.slot[0] === 'r'), 'one tile left, one right');
+    }
+  }
+});
+
+test('Fehlertraining: three games per word, the same word never twice in a row', () => {
+  assert.deepEqual(trainingTypes({ en: 'colleague', de: 'Kollege' }), ['choice', 'gaps', 'spell']);
+  assert.deepEqual(trainingTypes({ en: 'ok', de: 'gut' }), ['choice', 'choice', 'spell'], 'too short for the gaps game');
+  const q = [{ w: { id: 'a' } }, { w: { id: 'b' } }];
+  assert.equal(trainingPick(q, 'a'), 1);
+  assert.equal(trainingPick(q, 'b'), 0);
+  assert.equal(trainingPick([{ w: { id: 'a' } }], 'a'), 0, 'only one word left');
 });
