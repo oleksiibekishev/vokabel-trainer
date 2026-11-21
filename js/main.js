@@ -6,12 +6,11 @@ import {
 } from './core.js';
 import { Game } from './game.js';
 
-export const APP_VERSION = '1.3.0';
+export const APP_VERSION = '1.3.1';
 
 const app = document.getElementById('app');
 let game = null;
 let deferredInstall = null;
-let wordsSort = 'order';
 
 // ---------- navigation (Android back button goes one screen back) ----------
 
@@ -226,18 +225,13 @@ function renderLists() {
 function wordsSection(list) {
   const st = store.stats(list.id);
   const mk = (id) => (st[id] ? st[id].w || 0 : 0);
-  const words = list.words.slice();
-  if (wordsSort === 'hard') words.sort((a, b) => mk(b.id) - mk(a.id));
+  // always hardest first (most mistakes); words without mistakes keep the list order
+  const words = list.words.slice().sort((a, b) => mk(b.id) - mk(a.id));
   return h('section', { class: 'stack words-section' },
     h('div', { class: 'section-head' },
       h('h2', null, t('wordsIn', { name: list.name })),
-      h('span', { class: 'list-count' }, t('wordsN', { n: list.words.length }))),
-    h('div', { class: 'segmented', role: 'group', 'aria-label': t('sorting') },
-      ['order', 'hard'].map((k) => h('button', {
-        class: wordsSort === k ? 'on' : '', type: 'button', 'aria-pressed': String(wordsSort === k),
-        onclick: () => { wordsSort = k; show('lists'); },
-      }, t(k === 'order' ? 'sortOrder' : 'sortHard')))),
-    wordsSort === 'hard' && !words.some((w) => mk(w.id) > 0) ? h('div', { class: 'info-dashed' }, icon('info'), t('noMistakes')) : null,
+      h('span', { class: 'list-count' }, t('wordsN', { n: list.words.length }) + ' · ' + t('sortHard'))),
+    !words.some((w) => mk(w.id) > 0) ? h('div', { class: 'info-dashed' }, icon('info'), t('noMistakes')) : null,
     h('div', { class: 'word-table' },
       h('div', { class: 'word-table-head' }, h('span', null, t('wordsHead')), h('span', null, t('mistakesHead'))),
       words.map((w) => h('div', { class: 'word-row' },

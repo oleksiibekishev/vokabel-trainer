@@ -312,7 +312,9 @@ async function main() {
   await page.locator('.list-card .btn', { hasText: 'Listen & Wörter' }).click();
   await page.locator('.list-main', { hasText: 'KA1 E Vorbereitung' }).click();
   await page.waitForFunction(() => document.querySelector('.list-row.active')?.textContent.includes('KA1 E Vorbereitung'));
-  await page.locator('.segmented button', { hasText: 'Schwierigste' }).click();
+  assert.equal(await page.locator('.words-section .segmented').count(), 0, 'no sort switch');
+  const missCounts = await page.locator('.word-row .miss').evaluateAll((els) => els.map((e) => Number(e.textContent.replace(/\D/g, '')) || 0));
+  assert.deepEqual(missCounts, missCounts.slice().sort((a, b) => b - a), 'hardest words first');
   await shot(page, '14-words');
   assert.ok(await page.locator('.miss:not(.none)').count() >= 1, 'mistakes are counted');
   await page.goBack();
