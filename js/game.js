@@ -291,8 +291,22 @@ export class Game {
       left.forEach((l, i) => cells.push(l, right[i]));
       grid = h('div', { class: 'pairs cols' }, cells);
     } else {
-      const all = [...words.map((w) => make(w, 'en')), ...words.map((w) => make(w, 'de'))];
-      grid = h('div', { class: 'pairs grid' }, shuffle(all));
+      // Languages are mixed between the columns, but every pair has
+      // one word on the left and its partner on the right.
+      const half = words.length % 2 && Math.random() < 0.5 ? Math.ceil(words.length / 2) : Math.floor(words.length / 2);
+      const enLeft = shuffle(words.map((_, i) => i < half));
+      const left = [];
+      const right = [];
+      words.forEach((w, i) => {
+        const en = make(w, 'en');
+        const de = make(w, 'de');
+        if (enLeft[i]) { left.push(en); right.push(de); } else { left.push(de); right.push(en); }
+      });
+      shuffle(left);
+      shuffle(right);
+      const cells = [];
+      left.forEach((l, i) => cells.push(l, right[i]));
+      grid = h('div', { class: 'pairs grid' }, cells);
     }
     this.board.appendChild(grid);
     this.pairs = { sel: null, left: words.length };
@@ -705,12 +719,14 @@ export class Game {
     });
   }
 
+  /** Confetti in its own layer above the result dialog (not under its dimmed backdrop). */
   confetti() {
-    for (let i = 0; i < 36; i++) {
+    const layer = h('div', { class: 'confetti-layer', 'aria-hidden': 'true' });
+    for (let i = 0; i < 48; i++) {
       const round = i % 4 === 0;
-      const w = round ? 8 : 6 + (i % 3) * 2;
-      const hgt = round ? 8 : 10 + (i % 2) * 4;
-      this.fx.appendChild(h('span', {
+      const w = round ? 9 : 7 + (i % 3) * 2;
+      const hgt = round ? 9 : 11 + (i % 2) * 5;
+      layer.appendChild(h('span', {
         class: 'confetti',
         style: {
           left: Math.random() * 100 + '%',
@@ -718,13 +734,15 @@ export class Game {
           height: hgt + 'px',
           borderRadius: round ? '50%' : '2px',
           background: CONFETTI[i % CONFETTI.length],
-          '--d': (Math.random() * 0.6).toFixed(2) + 's',
-          '--dur': (1.6 + (i % 5) * 0.15).toFixed(2) + 's',
+          '--d': (Math.random() * 0.7).toFixed(2) + 's',
+          '--dur': (1.8 + (i % 5) * 0.2).toFixed(2) + 's',
           '--r': Math.round(Math.random() * 720 - 360) + 'deg',
           '--x': Math.round(Math.random() * 120 - 60) + 'px',
-          '--y': Math.round(Math.random() * 40) + 'vh',
+          '--y': Math.round(Math.random() * 60) + 'vh',
         },
       }));
     }
+    document.body.appendChild(layer);
+    setTimeout(() => layer.remove(), 3600);
   }
 }

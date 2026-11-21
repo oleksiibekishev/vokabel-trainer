@@ -36,7 +36,22 @@ async function main() {
   const roundText = () => page.locator('.game-round').textContent();
   const modalVisible = () => page.locator('.modal').count();
 
+  async function checkPairColumns() {
+    const grid = page.locator('.pairs.grid');
+    if (!(await grid.count())) return;
+    const cells = await grid.locator('.tile').evaluateAll((els) => els.map((e, i) => ({ i, side: e.dataset.side, text: e.textContent.trim() })));
+    const de = cells.filter((c) => c.side === 'de');
+    const en = cells.filter((c) => c.side === 'en');
+    for (const e of en) {
+      const partner = de.find((d) => d.text === byEn.get(e.text).de);
+      assert.notEqual(e.i % 2, partner.i % 2, 'pair "' + e.text + '" must be split across both columns');
+    }
+    const leftLangs = new Set(cells.filter((c) => c.i % 2 === 0).map((c) => c.side));
+    assert.equal(leftLangs.size, 2, 'left column mixes both languages');
+  }
+
   async function solvePairs() {
+    await checkPairColumns();
     const handles = await page.locator('.tile').elementHandles();
     const items = [];
     for (const el of handles) {
@@ -115,6 +130,12 @@ async function main() {
       }
     }
     await page.waitForSelector('.modal-win');
+    const layering = await page.evaluate(() => {
+      const layer = document.querySelector('.confetti-layer');
+      const wrap = document.querySelector('.modal-wrap');
+      return layer && layer.parentElement === document.body && Number(getComputedStyle(layer).zIndex) > Number(getComputedStyle(wrap).zIndex);
+    });
+    assert.ok(layering, 'confetti is drawn above the result dialog');
     await page.waitForTimeout(500);
     await shot(page, label + '-won');
     return seen;
