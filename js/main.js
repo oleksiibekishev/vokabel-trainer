@@ -6,7 +6,7 @@ import {
 } from './core.js';
 import { Game } from './game.js';
 
-export const APP_VERSION = '1.3.1';
+export const APP_VERSION = '1.3.2';
 
 const app = document.getElementById('app');
 let game = null;
@@ -191,11 +191,12 @@ function showGame(level) {
 
 function renderLists() {
   const wrap = h('div', { class: 'screen' }, topbar(t('lists')));
-  wrap.appendChild(h('button', { class: 'btn primary', type: 'button', onclick: () => navigate('addList') }, icon('listPlus'), t('addList')));
+  const addBtn = h('button', { class: 'btn outline add-list-btn', type: 'button', onclick: () => navigate('addList') }, icon('listPlus'), t('addList'));
   const cur = store.currentList();
   const all = store.lists();
   if (!all.length) {
     wrap.appendChild(h('div', { class: 'info-dashed' }, icon('info'), t('emptyLists')));
+    wrap.appendChild(addBtn);
     return wrap;
   }
   wrap.appendChild(h('section', { class: 'card list-rows', 'aria-label': t('chooseList') }, all.map((l) => {
@@ -218,6 +219,7 @@ function renderLists() {
         },
       }, icon('trash')));
   })));
+  wrap.appendChild(addBtn);
   if (cur) wrap.appendChild(wordsSection(cur));
   return wrap;
 }

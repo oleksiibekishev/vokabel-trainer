@@ -259,6 +259,7 @@ h1, h2, p { margin: 0; }
 .field.invalid { border-color: var(--err); }
 .field-error { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; color: var(--err); }
 .field-error .icon { width: 16px; height: 16px; stroke-width: 2.2; }
+.add-list-btn { margin-top: -6px; }
 .words-section { margin-top: 4px; }
 .words-section .section-head { align-items: baseline; }
 .hint-small { font-size: 12.5px; line-height: 1.45; color: var(--muted); }

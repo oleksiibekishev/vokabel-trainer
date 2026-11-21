@@ -265,6 +265,13 @@ async function main() {
   await page.locator('.list-card .btn', { hasText: 'Listen & Wörter' }).click();
   await page.waitForSelector('.list-rows');
   assert.equal(await page.locator('.word-row').count(), words.length, 'words of the selected list are shown');
+  const placement = await page.evaluate(() => {
+    const rows = document.querySelector('.list-rows');
+    const btn = document.querySelector('.add-list-btn');
+    const wordsSec = document.querySelector('.words-section');
+    return rows.nextElementSibling === btn && btn.nextElementSibling === wordsSec;
+  });
+  assert.ok(placement, '"Liste hinzufügen" sits right under the lists, above the words');
   await page.locator('.btn', { hasText: 'Liste hinzufügen' }).click();
   await page.waitForSelector('#list-text');
   const order = await page.evaluate(() => [...document.querySelectorAll('#list-name, #list-text, label[for=file-in]')].map((e) => e.id || 'file'));
