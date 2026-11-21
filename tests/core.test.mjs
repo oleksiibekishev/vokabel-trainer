@@ -5,7 +5,7 @@ import {
   parseWordList, checkAnswer, answerVariants, displayForms, diffWords, closestForm, makeGaps,
   pickWords, pickDistractors, buildTypePlan, createFixedRounds, fixedRoundsValid, LEVELS,
   encodeData, decodeData, listToShare, listFromShare, primaryForm, answerDiff, variants, allVariants, gapTargets,
-  ENDLESS, MOD_TYPES, stepValue, applyBonus, komboNext, rollModifier, placeNewPairs, trainingTypes, trainingPick,
+  ENDLESS, MOD_TYPES, stepValue, applyBonus, komboNext, rollModifier, placeNewPairs, wirbelOrder, trainingTypes, trainingPick,
 } from '../js/core.js';
 import { BUILTIN_LISTS } from '../js/builtin-lists.js';
 
@@ -200,9 +200,9 @@ test('Endlos: bonus gets smaller, Zeitraffer gets faster', () => {
   assert.equal(stepValue(LEVELS.hard.fastSteps, 9), 1.5);
 });
 
-test('Kombo: ×2 +5 s, ×3 +10 s, ×4 +15 s, ×5 +20 s; slow answers start again at ×1', () => {
+test('Kombo: ×2 +5 s, ×3 +10 s, ×4 +15 s, ×5 +20 s; slow answers go back to ×1', () => {
   const run = (fasts) => {
-    let mult = 0;
+    let mult = 1;
     let total = 0;
     const seen = [];
     for (const f of fasts) {
@@ -214,12 +214,13 @@ test('Kombo: ×2 +5 s, ×3 +10 s, ×4 +15 s, ×5 +20 s; slow answers start again
     return { total, seen };
   };
   const all = run([true, true, true, true, true, true]);
-  assert.deepEqual(all.seen, [1, 2, 3, 4, 5, 5], 'first answer ×1, then up to ×5');
-  assert.equal(all.total, 20, '6 pairs: at most +20 s');
-  assert.equal(run([true, true, true, true]).total, 15, 'choice (4 answers): at most ×4 = +15 s');
+  assert.deepEqual(all.seen, [2, 3, 4, 5, 5, 5], 'every fast answer one step up, ×5 is the top');
+  assert.equal(all.total, 20, 'at most +20 s per round');
+  assert.equal(run([true, true, true, true]).total, 20, 'choice (4 answers) can reach ×5 too');
   const broken = run([true, true, false, true]);
-  assert.deepEqual(broken.seen, [1, 2, 1, 2]);
-  assert.equal(broken.total, 10);
+  assert.deepEqual(broken.seen, [2, 3, 1, 2]);
+  assert.equal(broken.total, 15);
+  assert.equal(run([false, false]).total, 0);
 });
 
 test('special rounds: from round 4, never twice in a row, limited per game, only fitting games', () => {
@@ -266,6 +267,24 @@ test('Wirbel: new pairs go into the freed places, split like the rest of the boa
       assert.notEqual(two[0].side, two[1].side);
       assert.ok(two.some((x) => x.slot[0] === 'l') && two.some((x) => x.slot[0] === 'r'), 'one tile left, one right');
     }
+  }
+});
+
+test('Wirbel shuffle: columns stay columns, mixed pairs stay split', () => {
+  const pairs = ['a', 'b', 'c', 'd', 'e', 'f'].map((x) => ({ en: x + 'E', de: x + 'D' }));
+  for (let i = 0; i < 200; i++) {
+    const cols = wirbelOrder(pairs, false);
+    assert.equal(cols.length, 12);
+    assert.ok(cols.every((x, k) => x.endsWith(k % 2 === 0 ? 'E' : 'D')), 'English left, German right');
+    const mixed = wirbelOrder(pairs, true);
+    assert.equal(new Set(mixed).size, 12);
+    for (const p of pairs) {
+      const a = mixed.indexOf(p.en);
+      const b = mixed.indexOf(p.de);
+      assert.notEqual(a % 2, b % 2, 'one tile of every pair on each side');
+    }
+    const leftLangs = new Set(mixed.filter((_, k) => k % 2 === 0).map((x) => x.slice(-1)));
+    assert.ok(leftLangs.size >= 1);
   }
 });
 

@@ -1,7 +1,7 @@
 import {
-  LEVELS, LEVEL_IDS, ENDLESS, ROUND_SIZE, WIRBEL_EXTRA, MOD_TYPES, buildTypePlan, endlessTypes, pickWords, pickDistractors, makeGaps,
-  checkAnswer, closestForm, answerDiff, shuffle, wordFilterFor, variants, pickVariant, allVariants, gapTargets, norm,
-  stepValue, applyBonus, komboNext, rollModifier, placeNewPairs, trainingTypes, trainingPick,
+  LEVELS, LEVEL_IDS, ENDLESS, ROUND_SIZE, WIRBEL_EXTRA, KOMBO_MAX, MOD_TYPES, buildTypePlan, endlessTypes, pickWords, pickDistractors,
+  makeGaps, checkAnswer, closestForm, answerDiff, shuffle, wordFilterFor, variants, pickVariant, allVariants, gapTargets, norm,
+  stepValue, applyBonus, komboNext, rollModifier, placeNewPairs, wirbelOrder, trainingTypes, trainingPick,
 } from './core.js';
 import * as store from './store.js';
 import { t, tSplit } from './i18n.js';
@@ -30,6 +30,13 @@ function splitWords(chars) {
 /** 1.5 -> "1,5" */
 function fmtFactor(f) {
   return String(f).replace('.', ',');
+}
+
+/** Restarts a CSS animation class. */
+function replay(el, cls) {
+  el.classList.remove(cls);
+  void el.getBoundingClientRect();
+  el.classList.add(cls);
 }
 
 /**
@@ -70,9 +77,9 @@ export class Game {
     return !this.ended && !this.destroyed && this.holds.size === 0;
   }
 
-  /** No answers while paused, during the special-round banner or after the last answer of a round. */
+  /** No answers while paused, during the special-round banner, while Wirbel moves the tiles or after the last answer of a round. */
   blocked() {
-    return this.ended || this.destroyed || this.roundOver || this.holds.has('pause') || this.holds.has('mod');
+    return this.ended || this.destroyed || this.roundOver || this.holds.has('pause') || this.holds.has('mod') || this.holds.has('wirbel');
   }
 
   hold(reason) { this.holds.add(reason); }
@@ -83,20 +90,33 @@ export class Game {
     setTimeout(() => { if (e === this.epoch && !this.destroyed) fn(); }, ms);
   }
 
+  reducedMotion() {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
   // ---------- setup ----------
 
   buildShell() {
     this.elRound = h('span', { class: 'game-round' });
+    this.elModChip = h('span', { class: 'mod-chip', hidden: true });
+    this.elSlot = h('div', { class: 'time-slot' });
     this.elTimerNum = h('span', { class: 'num' }, '0');
-    this.elTimer = h('output', { class: 'timer', role: 'timer' }, icon('pause'), this.elTimerNum, h('span', { class: 'unit' }, 's'));
-    this.elReserveNum = h('span', { class: 'num' });
-    this.elReserve = h('span', { class: 'reserve-chip', role: 'img', hidden: true }, icon('extra'), this.elReserveNum);
+    this.elTimer = h('output', { class: 'timer', role: 'timer' },
+      icon('pause', 'i-pause'), icon('extra', 'i-extra'), this.elTimerNum, h('span', { class: 'unit' }, 's'));
+    this.elSteps = h('div', { class: 'word-steps', hidden: this.mode !== 'training' });
     this.elBarFill = h('div', { class: 'timebar-fill' });
     this.elBar = h('div', { class: 'timebar' }, this.elBarFill);
     this.elDots = h('div', { class: 'dots', 'aria-hidden': 'true' });
-    this.elFuse = h('span', { class: 'fuse', 'aria-hidden': 'true' }, h('i'));
-    this.elMod = h('span', { class: 'mod-chip', hidden: true });
+    this.elExtraNum = h('span');
+    this.elExtra = h('span', { class: 'extra-chip', role: 'img', hidden: true }, icon('extra'), this.elExtraNum);
+    this.elStatusEnd = h('div', { class: 'status-end' }, this.elExtra);
+    this.elFuseFill = h('i');
+    this.elFuse = h('span', { class: 'fuse', 'aria-hidden': 'true' }, this.elFuseFill);
+    this.elMultiVal = h('span');
+    this.elMulti = h('span', { class: 'multi idle', role: 'img' }, icon('kombo'), this.elMultiVal);
+    this.elSpeed = h('span', { class: 'speed' });
     this.elTask = h('h2', { class: 'task-title' });
+    this.elPairsCount = h('span', { class: 'pairs-count', hidden: true });
     this.board = h('main', { class: 'board' });
     this.fx = h('div', { class: 'fx-layer', 'aria-hidden': 'true' });
     const label = this.mode === 'level'
@@ -108,12 +128,14 @@ export class Game {
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('quitTitle'), onclick: () => this.askQuit() }, icon('close')),
         h('div', { class: 'game-info' },
           h('span', { class: 'game-level' }, label),
-          this.elRound),
-        this.elReserve,
-        this.elTimer),
+          h('span', { class: 'round-line' }, this.elRound, this.elModChip)),
+        this.elSlot,
+        this.elTimer,
+        this.elSteps),
       this.elBar,
-      this.elDotsRow = h('div', { class: 'dots-row' }, this.elDots, this.elMod),
-      this.elTask,
+      h('div', { class: 'head-rule' }),
+      h('div', { class: 'status-row' }, this.elDots, this.elStatusEnd),
+      h('div', { class: 'task-row' }, this.elTask, this.elPairsCount),
       this.board,
       this.fx,
     );
@@ -123,17 +145,20 @@ export class Game {
     this.epoch++;
     this.ended = false;
     this.holds.clear();
-    this.root.classList.remove('shake', 'paused', 'on-extra');
+    this.root.classList.remove('shake', 'paused', 'on-extra', 'mod-fast', 'x2');
     this.fx.replaceChildren();
     this.used = new Set();
     this.roundIdx = 0;
     this.timeLeft = (this.cfg.start || 0) * 1000;
     this.reserve = 0;
+    this.reserveShown = 0;
+    this.extraLagUntil = 0;
     this.playMs = 0;
     this.mod = null;
+    this.modRevealed = false;
     this.modCount = 0;
     this.roundMods = [];
-    this.kombo = { mult: 0, last: 0, cold: false };
+    this.kombo = { mult: 1, last: 0, cold: false };
     this.noticeFree = 0;
     this.shownSec = null;
     this.shownReserve = null;
@@ -198,13 +223,24 @@ export class Game {
     else this.timeLeft += ms;
   }
 
+  /** The normal time is over: the Extrazeit pours into the time bar, the game goes on. */
   useReserve() {
     const add = this.capMs ? Math.min(this.reserve, this.capMs) : this.reserve;
     this.timeLeft += add;
     this.reserve -= add;
+    this.reserveShown = this.reserve;
     this.root.classList.add('on-extra');
     sfx.round();
-    this.notice(h('div', { class: 'notice extra-flash' }, icon('extra'), t('extraUsed')), 1300);
+    const chip = this.elExtra;
+    if (!chip.hidden) {
+      const a = chip.getBoundingClientRect();
+      const b = this.elBar.getBoundingClientRect();
+      chip.style.setProperty('--px', (b.left + b.width * 0.33 - (a.left + a.width / 2)) + 'px');
+      chip.style.setProperty('--py', (b.top - a.top) + 'px');
+      replay(chip, 'pour');
+      setTimeout(() => { chip.classList.remove('pour'); this.shownReserve = null; }, 420);
+    }
+    this.callout('extra', icon('extra'), t('extraUsed'), 1450);
   }
 
   renderTimer() {
@@ -219,23 +255,26 @@ export class Game {
     this.elTimer.classList.toggle('low', low);
     this.elBar.classList.toggle('low', low);
     const ref = this.capMs || this.cfg.start * 1000;
-    const pct = Math.max(0, Math.min(100, (this.timeLeft / ref) * 100));
-    this.elBarFill.style.width = pct + '%';
-    const rs = Math.ceil(this.reserve / 1000);
-    if (rs !== this.shownReserve) {
-      this.shownReserve = rs;
-      this.elReserve.hidden = rs <= 0;
-      this.elReserveNum.textContent = '+' + rs + ' s';
-      this.elReserve.setAttribute('aria-label', t('extraTimeAria', { t: rs }));
-      if (rs > 0) this.bump(this.elReserve);
-    }
-    if (this.mod === 'kombo') this.renderFuse();
+    this.elBarFill.style.setProperty('--p', Math.max(0, Math.min(1, this.timeLeft / ref)).toFixed(4));
+    this.renderExtra();
+    if (this.mod === 'kombo' && this.modRevealed && !this.roundOver) this.renderFuse();
   }
 
-  bump(el) {
-    el.classList.remove('bump');
-    void el.getBoundingClientRect();
-    el.classList.add('bump');
+  /** Extrazeit chip below the time bar (in a Kombo round it is there from the start, empty). */
+  renderExtra() {
+    const chip = this.elExtra;
+    if (chip.classList.contains('pour')) return;
+    if (performance.now() >= this.extraLagUntil) this.reserveShown = this.reserve;
+    const rs = Math.ceil(this.reserveShown / 1000);
+    const visible = rs > 0 || (this.mod === 'kombo' && this.modRevealed && !!this.capMs);
+    if (rs === this.shownReserve && visible === !chip.hidden) return;
+    const up = rs > (this.shownReserve || 0);
+    this.shownReserve = rs;
+    chip.hidden = !visible;
+    chip.classList.toggle('empty', rs <= 0);
+    this.elExtraNum.textContent = '+' + rs + ' s';
+    chip.setAttribute('aria-label', t('extraTimeAria', { t: rs }));
+    if (up && rs > 0) replay(chip, 'bump');
   }
 
   onVisibility() {
@@ -282,24 +321,35 @@ export class Game {
 
   // ---------- rounds ----------
 
-  renderDots() {
+  dotClass(i) {
+    const mod = i < this.roundIdx || (i === this.roundIdx && this.modRevealed) ? this.roundMods[i] : null;
+    return 'dot' + (i < this.roundIdx ? ' done' : '') + (i === this.roundIdx ? ' cur' : '') + (i < this.fixed.length ? ' fixed' : '')
+      + (mod ? ' has-mod mod-' + mod : '');
+  }
+
+  /** Round dots; a special round is a diamond. Endlos shows only the last rounds. */
+  renderDots({ roll = false, mark = false } = {}) {
+    if (this.mode === 'training') return;
+    const dot = (i) => h('span', { class: this.dotClass(i) + (mark && i === this.roundIdx ? ' mark' : ''), 'data-type': this.plan[i] });
     if (this.mode === 'endless') {
-      this.elDots.className = 'dots note';
-      this.elDots.replaceChildren(...[this.best > 0 ? h('span', null, icon('star'), t('recordShort', { n: this.best })) : null].filter(Boolean));
-      return;
-    }
-    if (this.mode === 'training') {
-      const step = this.tCur ? this.tCur.step : 0;
-      this.elDots.className = 'dots steps';
-      this.elDots.replaceChildren(...[0, 1, 2].map((i) => h('span', { class: 'dot' + (i < step ? ' done' : '') + (i === step ? ' cur' : '') })));
+      const dots = [];
+      for (let i = Math.max(0, this.roundIdx - 5); i <= this.roundIdx; i++) dots.push(dot(i));
+      this.elDots.className = 'dots window';
+      this.elDots.replaceChildren(h('span', { class: 'dots-track' + (roll ? ' rolling' : '') }, dots));
       return;
     }
     this.elDots.className = 'dots' + (this.plan.length > 10 ? ' many' : '');
-    this.elDots.replaceChildren(...this.plan.map((type, i) => h('span', {
-      class: 'dot' + (i < this.roundIdx ? ' done' : '') + (i === this.roundIdx ? ' cur' : '') + (i < this.fixed.length ? ' fixed' : '')
-        + (this.roundMods[i] ? ' has-mod mod-' + this.roundMods[i] : ''),
-      'data-type': type,
-    })));
+    this.elDots.replaceChildren(...this.plan.map((_, i) => dot(i)));
+  }
+
+  renderRoundLine() {
+    const r = this.roundIdx + 1;
+    if (this.mode === 'endless') {
+      const rec = Math.max(this.best, this.roundIdx);
+      this.elRound.textContent = t('roundEndless', { r }) + (rec > 0 ? ' · ' + t('recordShort', { n: rec }) : '');
+    } else {
+      this.elRound.textContent = t('round', { r, n: this.cfg.rounds });
+    }
   }
 
   /** Special round for this round (or null). */
@@ -313,10 +363,10 @@ export class Game {
     if (this.mode === 'endless') while (this.plan.length <= this.roundIdx + 1) this.plan.push(...endlessTypes());
   }
 
-  startRound() {
+  startRound(learnedAnim = false) {
     this.qSeq++;
     this.roundOver = false;
-    if (this.mode === 'training') { this.startTrainingQuestion(); return; }
+    if (this.mode === 'training') { this.startTrainingQuestion(learnedAnim); return; }
     this.ensurePlan();
     const round = this.roundIdx + 1;
     const isFixed = this.roundIdx < this.fixed.length;
@@ -351,32 +401,33 @@ export class Game {
     }
     words.forEach((w) => this.used.add(w.id));
     this.mod = mod;
+    this.modRevealed = false;
     if (mod) {
       this.modCount++;
       this.roundMods[this.roundIdx] = mod;
     }
-    this.kombo = { mult: 0, last: this.playMs, cold: false };
+    this.kombo = { mult: 1, last: this.playMs, cold: false };
     this.roundType = type;
     this.roundWords = words;
     this.currentInput = null;
-    this.elRound.textContent = this.mode === 'endless'
-      ? t('roundEndless', { r: round })
-      : t('round', { r: round, n: this.cfg.rounds });
+    this.renderRoundLine();
     this.elTask.textContent = t('task_' + type);
     this.root.classList.toggle('typing-round', KEYBOARD_TYPES.includes(type));
-    this.renderDots();
+    this.renderDots({ roll: this.mode === 'endless' && this.roundIdx > 0 });
     this.renderBoard(type, words);
-    this.updateModChip();
+    this.renderModUI();
     if (mod) this.showModBanner(mod);
   }
 
   renderBoard(type, words) {
     this.board.replaceChildren();
     this.board.className = 'board board-' + type;
+    this.pairs = null;
     if (type === 'pairs') this.renderPairs(words);
     else if (type === 'choice') this.renderChoice(words);
     else if (type === 'gaps') this.renderGaps(words);
     else this.renderSpell(words);
+    this.renderPairsCount();
   }
 
   /** Last answer of a round was right. Keyboard rounds start at once so the phone keyboard stays open. */
@@ -405,19 +456,24 @@ export class Game {
     this.timeLeft += add * 1000;
     this.hold('bonus');
     if (want > 0) {
+      // only up to the limit: "+3 s · voll", or "Zeit voll" when nothing fits any more
       const capped = add < want - 0.001;
       const shown = Math.round(add);
       const text = !capped ? '+' + want + ' s' : shown > 0 ? t('bonusCapped', { t: shown }) : t('timeFull');
-      this.flash(h('div', { class: 'bonus-chip' + (capped ? ' capped' : '') }, text), 1400);
+      this.flash(h('div', { class: 'bonus-layer' }, h('span', { class: 'bonus-chip' + (capped ? ' capped' : '') }, text)), 1400);
+      if (shown > 0) replay(this.elTimer, 'bump');
     }
     this.startRound();
     if (this.mode === 'endless') {
       if (!this.recordShown && this.best > 0 && this.roundIdx > this.best) {
         this.recordShown = true;
-        this.notice(h('div', { class: 'notice record-flash' }, icon('star'), t('newRecord')), 1400);
+        this.notice(() => this.callout('record', icon('star'), t('newRecord'), 1450), 1450);
       }
       const nextBonus = stepValue(this.cfg.bonusSteps, this.roundIdx + 1);
-      if (nextBonus !== want) this.notice(h('div', { class: 'notice' }, t('bonusNow', { t: nextBonus })), 1700);
+      if (nextBonus !== want) {
+        this.notice(() => this.flash(h('div', { class: 'callout-layer note' },
+          h('span', { class: 'note-pill' }, icon('trendDown'), t('bonusNow', { t: nextBonus }))), 1650), 1650);
+      }
     }
     this.later(BONUS_PAUSE_MS, () => this.release('bonus'));
   }
@@ -427,13 +483,32 @@ export class Game {
     setTimeout(() => el.remove(), ms);
   }
 
-  /** Short messages at the top of the board, one after another. */
-  notice(el, ms = 1500) {
+  /** Short messages, one after another (never on top of the special-round banner). */
+  notice(fn, ms) {
     const now = performance.now();
     const at = Math.max(now, this.noticeFree || 0);
     this.noticeFree = at + ms;
-    if (at - now < 20) this.flash(el, ms);
-    else this.later(at - now, () => this.flash(el, ms));
+    if (at - now < 20) fn();
+    else this.later(at - now, fn);
+  }
+
+  /** A pill in the middle: "Extrazeit!", "Neuer Rekord!", "Gelernt". */
+  callout(kind, ic, text, ms) {
+    const pill = h('span', { class: 'callout ' + kind }, ic, text);
+    this.flash(h('div', { class: 'callout-layer ' + kind }, pill), ms);
+    setTimeout(() => pill.classList.add('out'), ms - 260);
+  }
+
+  /** A small chip that flies from one element to another ("+5 s" into the Extrazeit). */
+  flyChip(text, from, to) {
+    if (!to || to.hidden) return;
+    const base = this.fx.getBoundingClientRect();
+    const a = from.getBoundingClientRect();
+    const b = to.getBoundingClientRect();
+    this.flash(h('span', {
+      class: 'fly-chip',
+      style: { left: (a.left - base.left) + 'px', top: (a.top - base.top) + 'px', '--fx': (b.left - a.left) + 'px', '--fy': (b.top - a.top) + 'px' },
+    }, text), 700);
   }
 
   checkFly() {
@@ -442,43 +517,84 @@ export class Game {
 
   // ---------- special rounds ----------
 
+  /** 1.5 s at the start of the round: badge, name and rule; the timer stands still. */
   showModBanner(mod) {
     this.hold('mod');
     this.noticeFree = performance.now() + MOD_BANNER_MS;
-    this.flash(h('div', { class: 'mod-banner mod-' + mod },
+    const banner = h('div', { class: 'mod-banner mod-' + mod, role: 'status' },
       h('span', { class: 'mod-badge' }, icon(mod)),
       h('span', { class: 'mod-text' },
         h('b', null, t('modTitle_' + mod)),
-        h('span', null, t('modRule_' + mod, { f: fmtFactor(this.speed()) })))), MOD_BANNER_MS + 150);
-    this.later(MOD_BANNER_MS, () => this.release('mod'));
+        h('span', null, t('modRule_' + mod, { f: fmtFactor(this.speed()) }))),
+      h('span', { class: 'mod-clock' }));
+    this.fx.appendChild(banner);
+    this.later(MOD_BANNER_MS - 250, () => banner.classList.add('out'));
+    this.later(MOD_BANNER_MS, () => {
+      banner.remove();
+      this.release('mod');
+      this.modRevealed = true;
+      this.renderDots({ mark: true });
+      this.renderModUI(true);
+    });
   }
 
-  updateModChip() {
-    const m = this.mod;
+  /** Chip next to the round, multiplier or speed next to the timer, stripes on the time bar. */
+  renderModUI(pop = false) {
+    const m = this.modRevealed ? this.mod : null;
+    const sp = this.speed();
     this.root.classList.toggle('mod-fast', m === 'zeitraffer');
-    this.elDotsRow.classList.toggle('has-mod', !!m);
-    this.elMod.hidden = !m;
-    if (!m) { this.elMod.replaceChildren(); return; }
+    this.root.classList.toggle('x2', m === 'zeitraffer' && sp >= 2);
+    this.elModChip.hidden = !m;
+    if (m) {
+      this.elModChip.className = 'mod-chip mod-' + m + (pop ? ' in' : '');
+      this.elModChip.replaceChildren(icon(m), h('span', { class: 'mod-name' }, t('mod_' + m)));
+    }
+    if (m === 'kombo') {
+      this.elSlot.replaceChildren(this.elMulti, this.elFuse);
+      this.updateMulti(pop ? 'in' : null);
+    } else if (m === 'zeitraffer') {
+      this.elSpeed.textContent = fmtFactor(sp) + '×';
+      this.elSlot.replaceChildren(this.elSpeed);
+      if (pop) replay(this.elSpeed, 'pop');
+    } else {
+      this.elSlot.replaceChildren();
+    }
+    this.renderExtra();
+  }
+
+  /** Wirbel: "Paare 3/9" next to the task. */
+  renderPairsCount() {
+    const ps = this.mod === 'wirbel' ? this.pairs : null;
+    this.elPairsCount.hidden = !ps;
+    if (!ps) return;
+    const [pre, a, post] = tSplit('pairsCount', { a: ps.matched, b: ps.total }, 'a');
+    this.elPairsCount.replaceChildren(...[pre, h('b', null, a), post].filter((x) => x !== ''));
+  }
+
+  updateMulti(anim) {
     const k = this.kombo;
-    this.elMod.className = 'mod-chip mod-' + m + (m === 'kombo' && (k.cold || k.mult < 2) ? ' cold' : '');
-    let extra;
-    if (m === 'wirbel') extra = this.pairs ? this.pairs.matched + '/' + this.pairs.total : '';
-    else if (m === 'kombo') extra = '×' + (k.cold || k.mult < 1 ? 1 : k.mult);
-    else extra = fmtFactor(this.speed()) + '×';
-    this.elMod.setAttribute('aria-label', t('mod_' + m) + ' ' + extra);
-    this.elMod.replaceChildren(...[icon(m), h('span', { class: 'mod-name' }, t('mod_' + m)), h('span', { class: 'mod-extra' }, extra),
-      m === 'kombo' ? this.elFuse : null].filter(Boolean));
+    const mult = k.cold ? 1 : k.mult;
+    this.elMultiVal.textContent = '×' + mult;
+    this.elMulti.className = 'multi' + (mult <= 1 ? ' idle' : '') + (mult >= KOMBO_MAX ? ' max' : '');
+    this.elMulti.setAttribute('aria-label', t('mod_kombo') + ' ×' + mult);
+    if (anim) replay(this.elMulti, anim);
   }
 
   /** Kombo: how much of the window for the next fast answer is left. */
   renderFuse() {
     const k = this.kombo;
-    const left = k.mult < 1 ? 1 : Math.max(0, 1 - (this.playMs - k.last) / this.cfg.kombo);
-    this.elFuse.style.setProperty('--left', left.toFixed(3));
-    const cold = k.mult >= 1 && left <= 0;
-    if (cold !== k.cold) {
-      k.cold = cold;
-      this.updateModChip();
+    let left = Math.max(0, 1 - (this.playMs - k.last) / this.cfg.kombo);
+    if (this.reducedMotion()) left = Math.ceil(left * 6) / 6;
+    this.elFuseFill.style.transform = 'scaleX(' + left.toFixed(3) + ')';
+    const cold = left <= 0;
+    if (cold === k.cold) return;
+    k.cold = cold;
+    if (cold && k.mult > 1) {
+      // the streak is over: the multiplier fades quietly back to ×1
+      replay(this.elMulti, 'fade');
+      this.later(200, () => this.updateMulti('in'));
+    } else {
+      this.updateMulti();
     }
   }
 
@@ -491,22 +607,24 @@ export class Game {
     const r = komboNext(k.mult, fast);
     k.mult = r.mult;
     k.cold = false;
+    this.updateMulti(r.gain ? 'pop' : null);
     if (r.gain) {
       this.addExtra(r.gain * 1000);
+      this.extraLagUntil = performance.now() + 560;
       sfx.kombo(k.mult);
-      if (this.komboPop) this.komboPop.remove();
-      this.komboPop = h('div', { class: 'kombo-pop' }, '×' + k.mult, h('small', null, '+' + r.gain + ' s'));
-      this.flash(this.komboPop, 900);
+      this.flyChip('+' + r.gain + ' s', this.elMulti, this.capMs ? this.elExtra : this.elTimer);
     }
-    this.updateModChip();
   }
 
   questionHeader(n, cur, dir) {
-    const bars = n > 1
-      ? h('div', { class: 'qbars', 'aria-hidden': 'true' },
-        Array.from({ length: n }, (_, i) => h('span', { class: i < cur ? 'done' : i === cur ? 'cur' : '' })))
-      : null;
-    return h('div', { class: 'qrow' + (bars ? '' : ' end') }, bars, h('span', { class: 'dir-chip' }, t(dir === 'de2en' ? 'dirDeEn' : 'dirEnDe')));
+    let left = null;
+    if (this.mode === 'training' && this.tCur) {
+      left = h('span', { class: 'step-caption' }, t('stepCaption', { s: this.tCur.step + 1, type: t('type_' + this.roundType) }));
+    } else if (n > 1) {
+      left = h('div', { class: 'qbars', 'aria-hidden': 'true' },
+        Array.from({ length: n }, (_, i) => h('span', { class: i < cur ? 'done' : i === cur ? 'cur' : '' })));
+    }
+    return h('div', { class: 'qrow' + (left ? '' : ' end') }, left, h('span', { class: 'dir-chip' }, t(dir === 'de2en' ? 'dirDeEn' : 'dirEnDe')));
   }
 
   promptCard(field, text, compact) {
@@ -519,7 +637,7 @@ export class Game {
 
   makeTile(w, side) {
     const text = pickVariant(side === 'en' ? w.en : w.de, side);
-    const el = h('button', { class: 'tile', type: 'button', lang: side, 'data-side': side }, text);
+    const el = h('button', { class: 'tile', type: 'button', lang: side, 'data-side': side, 'data-wid': w.id }, text);
     const tile = { el, w, side, text, done: false };
     el.addEventListener('click', () => this.tapTile(tile));
     return el;
@@ -554,27 +672,67 @@ export class Game {
       left.forEach((l, i) => cells.push(l, right[i]));
       grid = h('div', { class: 'pairs grid' }, cells);
     }
+    if (this.mod === 'wirbel') grid.classList.add('wirbel');
     this.board.appendChild(grid);
     this.pairs = { sel: null, left: words.length, matched: 0, total: words.length, extra, grid };
   }
 
-  /** Wirbel: the 3 matched pairs disappear, 3 new pairs take their places (no shuffling of the others). */
+  /**
+   * Wirbel after the 3rd pair: the matched pairs vanish, 3 new pairs come in at their places,
+   * then all tiles swirl to new places (Leicht: within their column; else every pair stays split
+   * left/right). Taps are off and the time stands still while the tiles move (≈ 1.4 s).
+   */
   wirbelSwap() {
     const ps = this.pairs;
     const extra = ps.extra;
     ps.extra = [];
-    const doneTiles = [...ps.grid.querySelectorAll('.tile.done')];
-    this.later(260, () => doneTiles.forEach((el) => el.classList.add('wirbel-out')));
-    this.later(480, () => {
-      const cells = [...ps.grid.children].filter((c) => c.classList.contains('tile'));
+    const grid = ps.grid;
+    const doneTiles = [...grid.querySelectorAll('.tile.done')];
+    this.hold('wirbel');
+    this.later(150, () => doneTiles.forEach((el) => el.classList.add('vanish')));
+    this.later(470, () => {
+      const cells = [...grid.children].filter((c) => c.classList.contains('tile'));
       const freed = this.cfg.mixed
         ? { left: doneTiles.filter((e) => cells.indexOf(e) % 2 === 0), right: doneTiles.filter((e) => cells.indexOf(e) % 2 === 1) }
         : { en: doneTiles.filter((e) => e.dataset.side === 'en'), de: doneTiles.filter((e) => e.dataset.side === 'de') };
-      for (const { w, side, slot } of placeNewPairs(freed, extra, this.cfg.mixed)) {
+      placeNewPairs(freed, extra, this.cfg.mixed).forEach(({ w, side, slot }, i) => {
         const el = this.makeTile(w, side);
-        el.classList.add('wirbel-in');
+        el.classList.add('new');
+        el.style.setProperty('--d', (i * 40) + 'ms');
         slot.replaceWith(el);
-      }
+      });
+    });
+    this.later(470 + 300 + extra.length * 2 * 40 + 40, () => this.wirbelShuffle());
+  }
+
+  wirbelShuffle() {
+    const grid = this.pairs.grid;
+    const tiles = [...grid.querySelectorAll('.tile')];
+    const first = new Map(tiles.map((el) => [el, el.getBoundingClientRect()]));
+    const byWord = new Map();
+    for (const el of tiles) {
+      const p = byWord.get(el.dataset.wid) || {};
+      p[el.dataset.side] = el;
+      byWord.set(el.dataset.wid, p);
+    }
+    const order = wirbelOrder([...byWord.values()].filter((p) => p.en && p.de), this.cfg.mixed);
+    order.forEach((el) => grid.appendChild(el));
+    order.forEach((el, i) => {
+      el.classList.remove('new');
+      el.style.removeProperty('--d');
+      const a = first.get(el);
+      const z = el.getBoundingClientRect();
+      el.style.setProperty('--dx', (a.left - z.left) + 'px');
+      el.style.setProperty('--dy', (a.top - z.top) + 'px');
+      el.style.setProperty('--rot', ((i % 2 ? 1 : -1) * (8 + (i % 3) * 4)) + 'deg');
+      el.classList.add('swirl');
+    });
+    this.later(640, () => {
+      order.forEach((el) => {
+        el.classList.remove('swirl');
+        ['--dx', '--dy', '--rot'].forEach((v) => el.style.removeProperty(v));
+      });
+      this.release('wirbel');
     });
   }
 
@@ -624,7 +782,7 @@ export class Game {
       ps.left--;
       ps.matched++;
       this.komboHit();
-      if (this.mod === 'wirbel') this.updateModChip();
+      this.renderPairsCount();
       if (ps.left === 0) this.finishRound();
       else if (ps.extra.length && ps.matched === WIRBEL_EXTRA) this.wirbelSwap();
     } else {
@@ -870,20 +1028,16 @@ export class Game {
     }, this.reducedMotion() ? 0 : 800);
   }
 
-  reducedMotion() {
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  }
-
-  /** Endlos is over: rounds reached and record. */
+  /** Endlos is over: finished rounds as a big number, record. */
   endlessSummary() {
     const n = this.roundIdx;
     const res = store.recordEndless(this.list.id, n);
-    const text = n === 0 ? t('endlessReachedNone') : n === 1 ? t('endlessReachedOne') : t('endlessReached', { n });
     return h('div', { class: 'endless-sum' },
-      h('p', { class: 'endless-rounds' }, text),
+      h('span', { class: 'eyebrow' }, t('roundsDone')),
+      h('span', { class: 'big-number' }, String(n)),
       res.newRecord
-        ? h('span', { class: 'record-chip' }, icon('star'), t('newRecord'))
-        : res.best > 0 ? h('p', { class: 'modal-text' }, t('endlessRecord', { n: res.best })) : null);
+        ? h('span', { class: 'record-chip late' }, icon('star'), t('newRecord'))
+        : res.best > 0 ? h('p', { class: 'modal-text' }, res.best === 1 ? t('endlessBestOne') : t('endlessBest', { n: res.best })) : null);
   }
 
   okRow(enWord, deWord, cls) {
@@ -963,14 +1117,19 @@ export class Game {
     sfx.bad();
     const recap = h('div', { class: 'recap' }, this.roundWords.map((w) => h('div', null,
       h('span', { lang: 'en' }, allVariants(w.en, 'en')), h('span', { lang: 'de' }, allVariants(w.de, 'de')))));
-    let intro;
     if (this.mode === 'endless') {
-      intro = this.endlessSummary();
-    } else {
-      store.recordResult(this.list.id, this.level, { completed: false, timeLeft: 0, round: this.roundIdx + 1 });
-      const [pre, bold, post] = tSplit('timeUpSub', { round: t('roundOf', { r: this.roundIdx + 1, n: this.cfg.rounds }) }, 'round');
-      intro = h('p', { class: 'modal-text', style: { color: 'var(--text)' } }, pre, h('b', null, bold), post);
+      this.showEndModal({
+        title: t('gameOver'),
+        center: true,
+        cls: 'modal-fail',
+        icon: { name: 'endless', kind: 'accent', extra: 'big' },
+        body: h('div', { class: 'modal-body' }, this.endlessSummary(), recap),
+      });
+      return;
     }
+    store.recordResult(this.list.id, this.level, { completed: false, timeLeft: 0, round: this.roundIdx + 1 });
+    const [pre, bold, post] = tSplit('timeUpSub', { round: t('roundOf', { r: this.roundIdx + 1, n: this.cfg.rounds }) }, 'round');
+    const intro = h('p', { class: 'modal-text', style: { color: 'var(--text)' } }, pre, h('b', null, bold), post);
     this.showEndModal({
       title: t('timeUpTitle'),
       cls: 'modal-fail',
@@ -1017,7 +1176,7 @@ export class Game {
 
   // ---------- Fehlertraining ----------
 
-  startTrainingQuestion() {
+  startTrainingQuestion(learnedAnim = false) {
     const q = this.tQueue;
     if (!q.length) { this.trainingDone(); return; }
     const it = q.splice(trainingPick(q, this.tLast), 1)[0];
@@ -1029,30 +1188,87 @@ export class Game {
     this.roundType = type;
     this.roundWords = [it.w];
     this.currentInput = null;
-    this.elRound.textContent = left === 1 ? t('wordsLeftOne') : t('wordsLeft', { n: left });
+    // after a learned word the counter changes when the word card arrives there
+    if (learnedAnim) this.later(450, () => this.renderTrainingCount(left, true));
+    else this.renderTrainingCount(left, false);
+    this.renderSteps();
     this.elTask.textContent = t('task_' + type);
     this.root.classList.toggle('typing-round', KEYBOARD_TYPES.includes(type));
-    this.renderDots();
     this.renderBoard(type, [it.w]);
-    this.updateModChip();
+    if (learnedAnim) this.board.classList.add('swap-in');
+    this.renderModUI();
   }
 
-  /** Right answer: one step further; after 3 steps the word is learned. */
+  /** "Noch 7 Wörter", with a check mark after a learned word. */
+  renderTrainingCount(n, learned) {
+    const [pre, num, post] = tSplit(n === 1 ? 'wordsLeftOne' : 'wordsLeft', { n }, 'n');
+    const b = h('b', null, num);
+    this.elRound.replaceChildren(...[learned ? h('span', { class: 'learn-mark' }, icon('check')) : null, pre, b, post].filter((x) => x !== null && x !== ''));
+    if (learned) replay(b, 'bump');
+  }
+
+  /** Progress of the current word: "2/3" and three dots (Auswahl → Lücken → Schreiben). */
+  renderSteps(popIdx = -1) {
+    const step = this.tCur ? Math.min(this.tCur.step, 3) : 0;
+    this.elSteps.setAttribute('aria-label', step + '/3');
+    this.elSteps.replaceChildren(h('span', { class: 'word-steps-label' }, step + '/3'),
+      ...[0, 1, 2].map((i) => h('i', { class: 'word-step' + (i < step ? ' done' : i === step ? ' cur' : '') + (i === popIdx ? ' pop' : '') })));
+  }
+
+  /** Right answer: one step further; after 3 steps the word is learned and flies into the counter. */
   trainingRight() {
     const it = this.tCur;
+    const doneIdx = it.step;
     it.step++;
-    if (it.step >= it.types.length) {
+    const learned = it.step >= it.types.length;
+    this.renderSteps(doneIdx);
+    if (learned) {
       store.clearMistakes(this.list.id, it.w.id);
       this.tLearned++;
-      this.flash(h('div', { class: 'learned-chip' }, icon('check'), t('learned')), 1100);
     } else {
       this.tQueue.push(it);
     }
-    this.renderDots();
     this.board.classList.add('round-ok');
     const next = this.tQueue.length ? this.tQueue[trainingPick(this.tQueue, it.w.id)] : null;
-    if (next && KEYBOARD_TYPES.includes(next.types[next.step])) this.startRound();
-    else this.later(it.step >= it.types.length ? 700 : 420, () => this.startRound());
+    const nextKb = !!next && KEYBOARD_TYPES.includes(next.types[next.step]);
+    if (!learned) {
+      if (nextKb) this.startRound();
+      else this.later(420, () => this.startRound());
+      return;
+    }
+    if (!next) {
+      this.later(350, () => { this.flyLearned(); this.later(650, () => this.startRound()); });
+    } else if (nextKb) {
+      this.flyLearned();
+      this.startRound(true);
+    } else {
+      this.later(350, () => { this.flyLearned(); this.startRound(true); });
+    }
+  }
+
+  /** The finished question flies into the word counter, "Gelernt" pops up. */
+  flyLearned() {
+    const base = this.fx.getBoundingClientRect();
+    const a = this.board.getBoundingClientRect();
+    const target = this.elRound.querySelector('b') || this.elRound;
+    const b = target.getBoundingClientRect();
+    const ghost = h('div', {
+      class: 'learn-fly',
+      style: {
+        left: (a.left - base.left) + 'px', top: (a.top - base.top) + 'px', width: a.width + 'px', height: a.height + 'px',
+        '--lx': (b.left + b.width / 2 - (a.left + a.width / 2)) + 'px', '--ly': (b.top + b.height / 2 - (a.top + a.height / 2)) + 'px',
+      },
+    });
+    // a copy without form fields, so nothing can get the focus
+    const copy = this.board.cloneNode(true);
+    copy.querySelectorAll('input, button').forEach((x) => {
+      const span = h('span', { class: x.className });
+      span.textContent = x.tagName === 'INPUT' ? x.value : x.textContent;
+      x.replaceWith(span);
+    });
+    ghost.append(...copy.childNodes);
+    this.flash(ghost, 480);
+    this.callout('learned', icon('check'), t('learnedShort'), 1000);
   }
 
   /** Wrong answer: show what was wrong, the word starts again at step 1 and comes back later. */
@@ -1074,8 +1290,8 @@ export class Game {
         title: t('wrongTitle'),
         icon: { name: 'close', kind: 'err' },
         cls: 'modal-end modal-fail',
-        body: h('div', { class: 'modal-body' }, this.failBody(info), h('p', { class: 'encourage' }, t('laterAgain'))),
-        buttons: [{ label: t('quit'), value: 'quit', kind: 'outline' }, { label: t('goOn'), value: 'go', kind: 'primary', grow: true }],
+        body: h('div', { class: 'modal-body' }, this.failBody(info), h('p', { class: 'later-note' }, icon('reset'), t('laterAgain'))),
+        buttons: [{ label: t('menu'), value: 'quit', kind: 'outline' }, { label: t('goOn'), value: 'go', kind: 'primary', grow: true }],
       }).then((v) => {
         if (this.destroyed) return;
         if (v === 'quit') { this.destroy(); this.onMenu(); return; }
@@ -1094,8 +1310,10 @@ export class Game {
       icon: { name: 'check', kind: 'ok' },
       center: true,
       cls: 'modal-end modal-win',
-      body: h('p', { class: 'modal-text' }, n === 1 ? t('trainingDoneTextOne') : t('trainingDoneText', { n })),
-      buttons: [{ label: t('menu'), value: 'menu', kind: 'primary', grow: true }],
+      body: h('div', { class: 'big-stat' },
+        h('span', { class: 'big-number' }, String(n)),
+        h('span', { class: 'eyebrow' }, n === 1 ? t('wordLearned') : t('wordsLearned'))),
+      buttons: [{ label: t('menu'), value: 'menu', kind: 'primary', grow: true, tall: true }],
     }).then(() => {
       if (this.destroyed) return;
       this.destroy();

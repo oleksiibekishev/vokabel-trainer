@@ -70,13 +70,33 @@ export function applyBonus(timeLeft, bonus, cap) {
 }
 
 /**
- * Kombo round: the next correct answer. The first answer and every slow one start at ×1,
- * every fast one raises the multiplier (max ×5) and gives +5 s Extrazeit.
+ * Kombo round: the next correct answer. The round starts at ×1; every fast answer
+ * (also the first one, counted from the start of the round) raises the multiplier
+ * and gives +5 s Extrazeit, up to ×5 = +20 s. A slow answer goes back to ×1.
  */
 export function komboNext(mult, fast) {
-  if (!fast || mult < 1) return { mult: 1, gain: 0 };
+  if (!fast) return { mult: 1, gain: 0 };
   if (mult >= KOMBO_MAX) return { mult: KOMBO_MAX, gain: 0 };
   return { mult: mult + 1, gain: KOMBO_STEP };
+}
+
+/**
+ * Wirbel, after the new pairs came in: new order of the tiles.
+ * Columns: English and German tiles are shuffled within their column.
+ * Mixed grid: every pair again gets one tile left and one right (sides at random).
+ * pairs: [{ en, de }] (any objects) – returns the tiles row by row: [left, right, left, right, …]
+ */
+export function wirbelOrder(pairs, mixed, rnd = Math.random) {
+  if (!mixed) {
+    const en = shuffle(pairs.map((p) => p.en), rnd);
+    const de = shuffle(pairs.map((p) => p.de), rnd);
+    return en.flatMap((e, i) => [e, de[i]]);
+  }
+  const half = Math.floor(pairs.length / 2) + (pairs.length % 2 && rnd() < 0.5 ? 1 : 0);
+  const enLeft = shuffle(pairs.map((_, i) => i < half), rnd);
+  const left = shuffle(pairs.map((p, i) => (enLeft[i] ? p.en : p.de)), rnd);
+  const right = shuffle(pairs.map((p, i) => (enLeft[i] ? p.de : p.en)), rnd);
+  return left.flatMap((l, i) => [l, right[i]]);
 }
 
 /**

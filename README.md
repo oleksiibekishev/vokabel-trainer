@@ -28,8 +28,8 @@ Jede Runde ab Runde 4 wird mit 25 % zur Spezialrunde, nie zwei hintereinander. H
 
 | Spezialrunde | Spiele | Was passiert |
 |---|---|---|
-| Wirbel | Paare | Nach 3 richtigen Paaren verschwinden sie, an ihrer Stelle kommen 3 neue (9 statt 6 Paare, keine Extrazeit). |
-| Kombo | Paare, Auswahl | Schnelle Antworten hintereinander: ×2 = +5 s, ×3 = +10 s, ×4 = +15 s, ×5 = +20 s. Diese Sekunden sind **Extrazeit** über dem Limit; sie wird erst benutzt, wenn die normale Zeit abgelaufen ist. Schnell = höchstens 3,5 s (Leicht), 3 s (Mittel), 2,5 s (Schwer) nach der letzten Antwort. |
+| Wirbel | Paare | Nach 3 richtigen Paaren verschwinden sie, an ihrer Stelle kommen 3 neue (9 statt 6 Paare, keine Extrazeit); danach wirbeln alle Kärtchen auf neue Plätze (Leicht: innerhalb ihrer Spalte, sonst bleibt jedes Paar links/rechts geteilt). Während der Animation steht die Zeit. |
+| Kombo | Paare, Auswahl | Schnelle richtige Antworten hintereinander (auch die erste, ab Rundenbeginn): ×2 = +5 s, ×3 = +10 s, ×4 = +15 s, ×5 = +20 s. Diese Sekunden sind **Extrazeit** über dem Limit; sie wird erst benutzt, wenn die normale Zeit abgelaufen ist. Schnell = höchstens 3,5 s (Leicht), 3 s (Mittel), 2,5 s (Schwer) nach der letzten Antwort. |
 | Zeitraffer | alle (ab Mittel) | Die Zeit läuft 1,5× so schnell. |
 
 ### Weitere Modi
@@ -58,6 +58,8 @@ to record - erfassen, aufnehmen
 ## Design
 
 Warmer, ruhiger Stil: Ivory-Hintergrund, dunkle Hauptbuttons, Clay (`#D97757`) nur für „spannende“ Stellen (Zeitbalken, aktuelle Runde, Auswahl, „+10 s“). Hell- und Dunkelmodus folgen dem Handy.
+
+Spezialrunden: Wirbel in Clay, Kombo und Extrazeit in Blau (`--extra` `#2A65A8`), Zeitraffer in Violett (`--rush` `#8E5FD0`, gestreifter Zeitbalken). Eine Spezialrunde ist in der Punktreihe eine Raute. Bei „Bewegung reduzieren“ gibt es statt Bewegung nur Ein- und Ausblenden.
 
 Schriften (selbst gehostet in `fonts/`, SIL Open Font License): Source Serif 4 (Titel, Timer), Manrope (Text), JetBrains Mono (Lücken, Buchstabenvergleich). Icons: Lucide (ISC-Lizenz).
 

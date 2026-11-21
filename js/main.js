@@ -6,7 +6,7 @@ import {
 } from './core.js';
 import { Game } from './game.js';
 
-export const APP_VERSION = '1.5.0';
+export const APP_VERSION = '1.6.0';
 
 const app = document.getElementById('app');
 let game = null;
@@ -91,7 +91,8 @@ function renderHome() {
   }
   const rules = h('details', { class: 'rules', open: !store.settings().rulesClosed },
     h('summary', null, t('rulesTitle'), icon('chevronDown')),
-    h('ol', null, tList('rules').map((r, i) => h('li', null, h('span', { class: 'num' }, String(i + 1)), h('span', null, r)))));
+    h('ol', null, tList('rules').map((r, i) => h('li', null, h('span', { class: 'num' }, String(i + 1)), h('span', null, r)))),
+    legend());
   rules.addEventListener('toggle', () => store.setSetting('rulesClosed', !rules.open));
   wrap.appendChild(rules);
   wrap.appendChild(h('div', { class: 'levels' }, LEVEL_IDS.map((lvl) => levelCard(list, lvl, enough))));
@@ -104,33 +105,53 @@ function modesSection(list, enough) {
   const endlessOpen = store.endlessUnlocked(list.id);
   const ep = store.endlessProgress(list.id);
   const mistakes = store.mistakeWords(list.id, list.words).length;
-  const card = ({ id, playable, meta, status, statusCls }) => h('button', {
+  const card = ({ id, playable, desc, status, statusCls, play, badge }) => h('button', {
     class: 'mode-card mode-' + id + (playable ? '' : ' locked'),
     type: 'button',
     disabled: !playable,
     onclick: () => { sfx.unlock(); navigate('game', id); },
   },
-  h('span', { class: 'mode-icon-tile', 'aria-hidden': 'true' }, icon(id)),
-  h('span', { class: 'mode-body' },
-    h('span', { class: 'mode-name' }, t('level_' + id)),
-    h('span', { class: 'mode-meta' }, meta),
-    h('span', { class: 'mode-status ' + statusCls }, status)),
-  playable ? h('span', { class: 'play-pill small', 'aria-hidden': 'true' }, icon('play')) : icon('lock', 'lock-icon'));
+  h('span', { class: 'mode-head' },
+    h('span', { class: 'mode-icon-tile', 'aria-hidden': 'true' }, icon(id), badge ? h('span', { class: 'mode-badge' }, badge) : null),
+    h('span', { class: 'mode-titles' },
+      h('span', { class: 'mode-name' }, t('level_' + id)),
+      h('span', { class: 'mode-desc' }, desc))),
+  h('span', { class: 'mode-foot' },
+    h('span', { class: 'mode-status ' + statusCls }, status),
+    playable ? h('span', { class: 'play-pill' }, icon('play'), play) : null));
   let endlessStatus;
-  let endlessCls = 'fresh';
-  if (!endlessOpen) { endlessStatus = t('endlessLocked'); endlessCls = 'locked'; }
-  else if (ep.best > 0) { endlessStatus = ep.best === 1 ? t('endlessBestOne') : t('endlessBest', { n: ep.best }); endlessCls = 'best'; }
-  else endlessStatus = t('notPlayed');
+  if (!endlessOpen) endlessStatus = { status: [icon('lock'), t('endlessLocked')], statusCls: 'locked' };
+  else if (ep.best > 0) endlessStatus = { status: [icon('star'), ep.best === 1 ? t('endlessBestOne') : t('endlessBest', { n: ep.best })], statusCls: 'best' };
+  else endlessStatus = { status: t('notPlayed'), statusCls: 'fresh' };
   return h('section', { class: 'modes', 'aria-label': t('moreModes') },
     h('h2', { class: 'modes-title' }, t('moreModes')),
-    card({ id: 'endless', playable: endlessOpen && enough, meta: t('endlessMeta'), status: endlessStatus, statusCls: endlessCls }),
+    card({ id: 'endless', playable: endlessOpen && enough, desc: t('endlessMeta'), play: t('play'), ...endlessStatus }),
     card({
       id: 'training',
       playable: mistakes > 0 && enough,
-      meta: t('trainingMeta'),
+      desc: t('trainingMeta'),
       status: mistakes === 0 ? t('trainingEmpty') : mistakes === 1 ? t('trainingCountOne') : t('trainingCount', { n: mistakes }),
-      statusCls: mistakes ? 'count' : 'fresh',
+      statusCls: mistakes ? 'best' : 'fresh',
+      play: t('practice'),
+      badge: mistakes > 0 ? String(mistakes) : null,
     }));
+}
+
+/** Special rounds, Extrazeit and the time limit, each with its icon (in "So funktioniert's"). */
+function legend() {
+  const item = (cls, ic, name, text) => h('li', null,
+    h('span', { class: 'legend-icon ' + cls, 'aria-hidden': 'true' }, icon(ic)),
+    h('span', null, h('b', null, name), ' – ' + text));
+  return h('div', { class: 'legend' },
+    h('div', { class: 'legend-head' },
+      h('span', { class: 'legend-title' }, t('specialRounds')),
+      h('span', { class: 'legend-hint' }, h('span', { class: 'dot has-mod done', 'aria-hidden': 'true' }), t('specialHint'))),
+    h('ul', null,
+      item('mod-wirbel', 'wirbel', t('mod_wirbel'), t('legend_wirbel')),
+      item('mod-kombo', 'kombo', t('mod_kombo'), t('legend_kombo')),
+      item('mod-zeitraffer', 'zeitraffer', t('mod_zeitraffer'), t('legend_zeitraffer')),
+      item('tone-extra', 'extra', t('extraTime'), t('legend_extra')),
+      item('', 'limit', t('limitName'), t('legend_limit'))));
 }
 
 function levelCard(list, level, enough) {
