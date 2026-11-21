@@ -15,8 +15,15 @@ async function main() {
   const core = await import(path.join(__dirname, '../js/core.js'));
   const { BUILTIN_LISTS } = await import(path.join(__dirname, '../js/builtin-lists.js'));
   const words = core.parseWordList(BUILTIN_LISTS[0].text).words;
-  const byEn = new Map(words.map((w) => [w.en, w]));
-  const byDe = new Map(words.map((w) => [w.de, w]));
+  // tiles and prompts show one random translation, so look words up by every variant
+  const byEn = new Map();
+  const byDe = new Map();
+  for (const w of words) {
+    for (const v of core.variants(w.en, 'en')) byEn.set(v, w);
+    for (const v of core.variants(w.de, 'de')) byDe.set(v, w);
+  }
+  const isEn = (w, text) => core.variants(w.en, 'en').includes(text);
+  const isDe = (w, text) => core.variants(w.de, 'de').includes(text);
 
   const browser = await chromium.launch();
   const iphone = { ...devices['iPhone 13'], deviceScaleFactor: 1 };
@@ -43,7 +50,7 @@ async function main() {
     const de = cells.filter((c) => c.side === 'de');
     const en = cells.filter((c) => c.side === 'en');
     for (const e of en) {
-      const partner = de.find((d) => d.text === byEn.get(e.text).de);
+      const partner = de.find((d) => isDe(byEn.get(e.text), d.text));
       assert.notEqual(e.i % 2, partner.i % 2, 'pair "' + e.text + '" must be split across both columns');
     }
     const leftLangs = new Set(cells.filter((c) => c.i % 2 === 0).map((c) => c.side));
@@ -61,7 +68,7 @@ async function main() {
     const de = items.filter((x) => x.side === 'de');
     for (const e of en) {
       const w = byEn.get(e.text);
-      const d = de.find((x) => x.text === w.de);
+      const d = de.find((x) => isDe(w, x.text));
       await e.el.click();
       await d.el.click();
     }
@@ -71,10 +78,16 @@ async function main() {
     for (let q = 0; q < 4; q++) {
       if (await modalVisible()) return;
       const prompt = (await page.locator('.choice .prompt-card .word').textContent()).trim();
-      const w = byDe.get(prompt) || byEn.get(prompt);
-      const answer = byDe.get(prompt) ? w.en : w.de;
+      const fromDe = byDe.has(prompt);
+      const w = fromDe ? byDe.get(prompt) : byEn.get(prompt);
       const roundBefore = await roundText();
-      await page.locator('.option', { hasText: answer }).filter({ hasText: new RegExp('^' + answer.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$') }).first().click();
+      const options = await page.locator('.option').elementHandles();
+      let clicked = false;
+      for (const o of options) {
+        const text = (await o.textContent()).trim();
+        if (fromDe ? isEn(w, text) : isDe(w, text)) { await o.click(); clicked = true; break; }
+      }
+      assert.ok(clicked, 'correct option is offered for "' + prompt + '"');
       await page.waitForTimeout(400);
       if ((await roundText()) !== roundBefore) return;
     }
@@ -84,10 +97,12 @@ async function main() {
     for (let k = 0; k < 2; k++) {
       const roundBefore = await roundText();
       const prompt = (await page.locator('.typing .prompt-card .word').textContent()).trim();
-      const target = [...core.primaryForm(byDe.get(prompt).en)].filter((c) => c !== ' ');
       const slots = page.locator('.gapword .cell');
       const cnt = await slots.count();
-      assert.equal(cnt, target.length, 'one cell per letter');
+      const shown = await slots.evaluateAll((els) => els.map((e) => (e.classList.contains('gap') ? null : e.textContent)));
+      const target = core.gapTargets(byDe.get(prompt).en).map((f) => [...f].filter((c) => c !== ' '))
+        .find((f) => f.length === cnt && f.every((c, i) => shown[i] === null || shown[i] === c));
+      assert.ok(target, 'gap word is one of the English spellings');
       let letters = '';
       for (let i = 0; i < cnt; i++) {
         if ((await slots.nth(i).getAttribute('class')).includes('gap')) letters += target[i];
@@ -157,7 +172,10 @@ async function main() {
   await enTiles.nth(1).click();
   assert.equal(await page.locator('.tile.sel').count(), 1, 'same-side tap switches selection');
   const selText = (await enTiles.nth(1).textContent()).trim();
-  const wrongDe = page.locator('.tile[data-side=de]').filter({ hasNotText: byEn.get(selText).de }).first();
+  let wrongDe = null;
+  for (const d of await page.locator('.tile[data-side=de]').elementHandles()) {
+    if (!isDe(byEn.get(selText), (await d.textContent()).trim())) { wrongDe = d; break; }
+  }
   await wrongDe.click();
   await page.waitForSelector('.modal-fail');
   assert.equal(await page.locator('.modal-fail .res-row').count(), 3);
@@ -175,7 +193,7 @@ async function main() {
 
   // ---------- 2. play easy to the end ----------
   const easyTypes = await playLevel('easy', '04-easy');
-  assert.ok(easyTypes.every((x) => x === 'pairs'));
+  assert.ok(easyTypes.every((x) => x === 'pairs' || x === 'choice') && easyTypes.includes('choice'), 'easy: pairs and choice');
   assert.ok((await page.locator('.modal-win').textContent()).includes('Mittel'), 'unlock message');
   await page.locator('.modal .btn', { hasText: 'Menü' }).click();
   await page.waitForSelector('.home');
@@ -191,7 +209,7 @@ async function main() {
 
   // ---------- 3. medium: mixed grid + all game types ----------
   const medTypes = await playLevel('medium', '06-medium');
-  assert.ok(medTypes.includes('spell') && medTypes.includes('gaps') && medTypes.includes('choice'));
+  assert.ok(medTypes.includes('gaps') && medTypes.includes('choice') && !medTypes.includes('spell'), 'medium: gaps, no spelling');
   await page.locator('.modal .btn', { hasText: 'Menü' }).click();
   await page.waitForSelector('.home');
 

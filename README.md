@@ -12,9 +12,9 @@ Auf dem Handy installieren:
 
 | Level | Runden | Startzeit | Bonus pro Runde | Spiele |
 |---|---|---|---|---|
-| Leicht | 6 | 60 s | +10 s | Paare (Englisch links, Deutsch rechts) |
-| Mittel | 10 | 40 s | +10 s | Paare (gemischt), Auswahl, Lücken, Schreiben |
-| Schwer | 15 | 30 s | +10 s | wie Mittel, mehr Schreiben und mehr Lücken |
+| Leicht | 6 | 60 s | +10 s | Paare (Englisch links, Deutsch rechts), Auswahl |
+| Mittel | 10 | 40 s | +10 s | Paare (gemischt, jedes Paar links/rechts geteilt), Auswahl, Lücken |
+| Schwer | 15 | 30 s | +10 s | Paare, Auswahl, Lücken, Schreiben |
 
 - Ein Timer für das ganze Level, jede geschaffte Runde gibt Bonuszeit.
 - Ein Fehler → zurück zu Runde 1 (mit Animation, was falsch war).
@@ -37,6 +37,7 @@ to record - erfassen, aufnehmen
 
 - Trenner: ` - ` (mit Leerzeichen), Tab oder `;`
 - Mehrere richtige englische Antworten mit `=` oder `/` trennen
+- Mehrere Übersetzungen (z. B. `das Verzeichnis, der Bericht`): im Spiel erscheint jeweils eine zufällig, bei einem Fehler werden alle richtigen Antworten gezeigt
 - Beim Schreiben ist Groß-/Kleinschreibung egal, `to` am Anfang ist optional
 
 ## Design

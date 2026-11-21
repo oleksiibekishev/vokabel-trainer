@@ -96,7 +96,7 @@ export function toast(msg, opts = {}) {
     document.body.appendChild(el);
   }
   el.className = 'toast' + (opts.action ? ' has-action' : '');
-  el.replaceChildren(opts.icon ? icon(opts.icon) : null, h('span', null, msg));
+  el.replaceChildren(...[opts.icon ? icon(opts.icon) : null, h('span', null, msg)].filter(Boolean));
   if (opts.action) el.appendChild(h('button', { class: 'toast-btn', type: 'button', onclick: opts.action.onClick }, opts.action.label));
   void el.offsetWidth;
   el.classList.add('show');

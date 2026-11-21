@@ -4,7 +4,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import {
   parseWordList, checkAnswer, answerVariants, displayForms, diffWords, closestForm, makeGaps,
   pickWords, pickDistractors, buildTypePlan, createFixedRounds, fixedRoundsValid, LEVELS,
-  encodeData, decodeData, listToShare, listFromShare, primaryForm, answerDiff,
+  encodeData, decodeData, listToShare, listFromShare, primaryForm, answerDiff, variants, allVariants, gapTargets,
 } from '../js/core.js';
 import { BUILTIN_LISTS } from '../js/builtin-lists.js';
 
@@ -83,6 +83,35 @@ test('error comparison: whole wrong words vs. single letters', () => {
   const d = answerDiff('researchand development', 'research and development');
   assert.equal(txt(d.bot), 'research␣and development', 'a missing space is shown as ␣');
   assert.equal(d.top.filter((x) => x.miss).length, 1);
+});
+
+test('several translations: variants, rounds without overlaps, safe distractors', () => {
+  assert.deepEqual(variants('das Verzeichnis, der Bericht, die Dokumentation', 'de'), ['das Verzeichnis', 'der Bericht', 'die Dokumentation']);
+  assert.deepEqual(variants('Kollege / Kollegin', 'de'), ['Kollege', 'Kollegin']);
+  assert.deepEqual(variants('der/die Verbraucher/-in', 'de'), ['der/die Verbraucher/-in']);
+  assert.deepEqual(variants('colleague = workmate', 'en'), ['colleague', 'workmate']);
+  assert.equal(allVariants('colleague = workmate', 'en'), 'colleague / workmate');
+  assert.deepEqual(gapTargets('colleague = workmate'), ['colleague', 'workmate']);
+  const ws = [
+    { id: 'a', en: 'record', de: 'das Verzeichnis, der Bericht' },
+    { id: 'b', en: 'report', de: 'der Bericht' },
+    { id: 'c', en: 'stock', de: 'der Bestand, das Lager' },
+    { id: 'd', en: 'storage', de: 'die Lagerung' },
+    { id: 'e', en: 'grinder', de: 'die Schleifmaschine' },
+  ];
+  for (let i = 0; i < 100; i++) {
+    const ids = pickWords(ws, 5).map((w) => w.id);
+    assert.ok(!(ids.includes('a') && ids.includes('b')), 'two words sharing "der Bericht" never in one round');
+    const d = pickDistractors(ws, ws[0], 'en', 3, Math.random, 'de').map((w) => w.id);
+    assert.ok(!d.includes('b'), '"report" is no wrong option when "der Bericht" is asked');
+  }
+});
+
+test('levels: easy has choice, medium has gaps but no spelling, hard has spelling', () => {
+  const types = (lvl) => new Set([...LEVELS[lvl].fixed, ...LEVELS[lvl].pool]);
+  assert.deepEqual([...types('easy')].sort(), ['choice', 'pairs']);
+  assert.deepEqual([...types('medium')].sort(), ['choice', 'gaps', 'pairs']);
+  assert.deepEqual([...types('hard')].sort(), ['choice', 'gaps', 'pairs', 'spell']);
 });
 
 test('gaps never hide all letters and skip spaces', () => {

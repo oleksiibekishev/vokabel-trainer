@@ -8,13 +8,13 @@ export const LEVEL_IDS = ['easy', 'medium', 'hard'];
 export const LEVELS = {
   easy: {
     rounds: 6, start: 60, bonus: 10, mixed: false, gapRatio: 0.35,
-    fixed: ['pairs', 'pairs', 'pairs'],
-    pool: ['pairs', 'pairs', 'pairs'],
+    fixed: ['pairs', 'choice', 'pairs'],
+    pool: ['pairs', 'pairs', 'choice'],
   },
   medium: {
     rounds: 10, start: 40, bonus: 10, mixed: true, gapRatio: 0.35,
     fixed: ['pairs', 'choice', 'pairs'],
-    pool: ['pairs', 'pairs', 'choice', 'gaps', 'gaps', 'spell', 'spell'],
+    pool: ['pairs', 'pairs', 'choice', 'choice', 'gaps', 'gaps', 'gaps'],
   },
   hard: {
     rounds: 15, start: 30, bonus: 10, mixed: true, gapRatio: 0.5,
@@ -122,6 +122,41 @@ export function checkAnswer(input, text) {
   const n = norm(String(input).replace(/[.!]+$/, ''));
   if (!n) return false;
   return answerVariants(text).includes(n);
+}
+
+/**
+ * The translations of one side as they are shown in the games.
+ * German: "das Verzeichnis, der Bericht, die Dokumentation" -> 3 variants; "Kollege / Kollegin" -> 2;
+ * "der/die Verbraucher/-in" stays one (slash without spaces). English also splits on "=".
+ */
+export function variants(text, side) {
+  const re = side === 'en' ? /\s*[,;=]\s*|\s+\/\s+/ : /\s*[,;]\s*|\s+\/\s+/;
+  const out = [];
+  for (const p of String(text).split(re)) {
+    const v = p.trim();
+    if (v && !out.some((o) => norm(o) === norm(v))) out.push(v);
+  }
+  return out.length ? out : [String(text).trim()];
+}
+
+export function pickVariant(text, side, rnd = Math.random) {
+  const v = variants(text, side);
+  return v[Math.floor(rnd() * v.length)];
+}
+
+/** All correct answers of one side, for the error dialog. */
+export function allVariants(text, side) {
+  return variants(text, side).join(side === 'en' ? ' / ' : ', ');
+}
+
+/** English spellings that can be used for the missing-letters game (one is picked at random). */
+export function gapTargets(en) {
+  const out = [];
+  for (const v of variants(en, 'en')) {
+    const f = expandParens(v)[0];
+    if (f && [...f].filter((c) => /\p{L}/u.test(c)).length >= 3 && !out.includes(f)) out.push(f);
+  }
+  return out.length ? out : [primaryForm(en)];
 }
 
 /** First spelling, used as the target for the missing-letters game. */
@@ -278,11 +313,11 @@ export function pickWords(words, n, { used = new Set(), stats = {}, rnd = Math.r
         if (r <= 0) break;
       }
       const { w } = bag.splice(idx, 1)[0];
-      const en = norm(w.en);
-      const de = norm(w.de);
-      if (seenEn.has(en) || seenDe.has(de)) continue;
-      seenEn.add(en);
-      seenDe.add(de);
+      const en = variants(w.en, 'en').map(norm);
+      const de = variants(w.de, 'de').map(norm);
+      if (en.some((x) => seenEn.has(x)) || de.some((x) => seenDe.has(x))) continue;
+      en.forEach((x) => seenEn.add(x));
+      de.forEach((x) => seenDe.add(x));
       picked.push(w);
     }
   };
@@ -294,11 +329,15 @@ export function pickWords(words, n, { used = new Set(), stats = {}, rnd = Math.r
 /** Wrong options for multiple choice, preferring similar-looking words. */
 export function pickDistractors(words, target, field, k, rnd = Math.random, promptField = null) {
   const tn = norm(target[field]);
-  const tp = promptField ? norm(target[promptField]) : null;
+  const side = field === 'en' ? 'en' : 'de';
+  const tVars = new Set(variants(target[field], side).map(norm));
+  const pVars = promptField ? new Set(variants(target[promptField], promptField === 'en' ? 'en' : 'de').map(norm)) : null;
+  const overlaps = (w) => variants(w[field], side).some((v) => tVars.has(norm(v)))
+    || (pVars && variants(w[promptField], promptField === 'en' ? 'en' : 'de').some((v) => pVars.has(norm(v))));
   const tokens = (s) => s.split(/[\s/=,]+/).filter((x) => x.length > 2);
   const tTokens = new Set(tokens(tn));
   const scored = words
-    .filter((w) => w.id !== target.id && norm(w[field]) !== tn && (!tp || norm(w[promptField]) !== tp))
+    .filter((w) => w.id !== target.id && !overlaps(w))
     .map((w) => {
       const n = norm(w[field]);
       let s = rnd() * 2;

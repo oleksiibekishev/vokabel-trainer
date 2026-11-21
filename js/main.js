@@ -6,11 +6,12 @@ import {
 } from './core.js';
 import { Game } from './game.js';
 
-export const APP_VERSION = '1.3.2';
+export const APP_VERSION = '1.4.0';
 
 const app = document.getElementById('app');
 let game = null;
 let deferredInstall = null;
+let updateWaiting = false;
 
 // ---------- navigation (Android back button goes one screen back) ----------
 
@@ -21,6 +22,7 @@ function show(name, arg) {
   const screens = { home: renderHome, lists: renderLists, addList: renderAddList, settings: renderSettings };
   app.replaceChildren((screens[name] || renderHome)(arg));
   window.scrollTo(0, 0);
+  if (name === 'home') setTimeout(applyUpdateIfIdle, 300);
 }
 
 function navigate(name, arg) {
@@ -261,7 +263,7 @@ function renderAddList() {
     nameInput.classList.toggle('invalid', !named && !!area.value.trim());
     preview.hidden = !area.value.trim();
     if (preview.hidden) { preview.replaceChildren(); return; }
-    preview.replaceChildren(
+    preview.replaceChildren(...[
       wordsOk
         ? h('div', { class: 'preview-status ok' }, icon('check'), t('recognized', { n: r.words.length }))
         : h('div', { class: 'preview-status err' }, icon('alert'), t('tooFew', { n: MIN_WORDS })),
@@ -270,7 +272,7 @@ function renderAddList() {
       r.skipped.length ? h('details', { class: 'skipped' },
         h('summary', null, r.skipped.length === 1 ? t('skippedOne') : t('skippedLines', { n: r.skipped.length }), icon('chevronDown')),
         r.skipped.slice(0, 20).map((x) => h('div', null, x))) : null,
-    );
+    ].filter(Boolean));
   };
   area.addEventListener('input', refresh);
   nameInput.addEventListener('input', refresh);
@@ -459,8 +461,16 @@ function registerSW() {
   navigator.serviceWorker.register('./sw.js').catch(() => { /* offline mode unavailable */ });
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!hadController) return;
-    toast(t('updateReady'), { action: { label: t('reload'), onClick: () => location.reload() } });
+    updateWaiting = true;
+    applyUpdateIfIdle();
   });
+}
+
+/** A new version is installed: reload quietly as soon as we are on the start screen (never during a game). */
+function applyUpdateIfIdle() {
+  if (!updateWaiting || game || document.querySelector('.modal-wrap') || !document.querySelector('.home')) return;
+  updateWaiting = false;
+  location.reload();
 }
 
 window.addEventListener('beforeinstallprompt', (e) => {
