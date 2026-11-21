@@ -4,7 +4,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import {
   parseWordList, checkAnswer, answerVariants, displayForms, diffWords, closestForm, makeGaps,
   pickWords, pickDistractors, buildTypePlan, createFixedRounds, fixedRoundsValid, LEVELS,
-  encodeData, decodeData, listToShare, listFromShare, primaryForm,
+  encodeData, decodeData, listToShare, listFromShare, primaryForm, answerDiff,
 } from '../js/core.js';
 import { BUILTIN_LISTS } from '../js/builtin-lists.js';
 
@@ -62,6 +62,24 @@ test('diff shows missing, extra and wrong letters', () => {
   const d3 = diffWords('stok', 'stock');
   assert.equal(d3.filter((o) => o.type !== 'ok').length, 1);
   assert.equal(closestForm('workmat', 'colleague = workmate'), 'workmate');
+});
+
+test('error comparison: whole wrong words vs. single letters', () => {
+  const txt = (row) => row.map((x) => (x.sp ? ' ' : x.miss ? '_' : x.ch)).join('');
+  const a = answerDiff('quality safe', 'quality control');
+  assert.equal(txt(a.top), 'quality safe');
+  assert.equal(txt(a.bot), 'quality control');
+  assert.ok(a.top.slice(0, 7).every((x) => x.cls === ''), 'quality is correct');
+  assert.ok(a.top.slice(8).every((x) => x.cls === 'wrongWord'), 'safe is marked as a whole');
+  assert.ok(a.bot.slice(8).every((x) => x.cls === 'goodWord'));
+  const b = answerDiff('colleage', 'colleague');
+  assert.equal(b.top.filter((x) => x.miss).length, 1);
+  assert.equal(b.bot.filter((x) => x.cls === 'good').map((x) => x.ch).join(''), 'u');
+  const c = answerDiff('grinderr', 'grinder');
+  assert.equal(c.top.filter((x) => x.cls === 'extra').length, 1);
+  const d = answerDiff('researchand development', 'research and development');
+  assert.equal(txt(d.bot), 'research␣and development', 'a missing space is shown as ␣');
+  assert.equal(d.top.filter((x) => x.miss).length, 1);
 });
 
 test('gaps never hide all letters and skip spaces', () => {

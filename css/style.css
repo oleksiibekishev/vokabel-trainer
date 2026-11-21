@@ -502,25 +502,29 @@ h1, h2, p { margin: 0; }
 .answer-line b { font-weight: 800; }
 .encourage { font-size: 14.5px; font-weight: 600; line-height: 1.4; text-align: center; color: var(--muted); }
 
-.diff { display: flex; gap: 6px; align-items: flex-start; justify-content: center; }
-.diff-labels { flex: none; display: flex; flex-direction: column; gap: 6px; padding-top: 0; }
-.diff-labels span { height: 36px; display: flex; align-items: center; font-size: 11px; font-weight: 700; letter-spacing: .07em; color: var(--muted); }
-.diff-cols { display: flex; flex-wrap: wrap; gap: 10px 8px; min-width: 0; }
-.diff-group { display: inline-flex; gap: 2px; }
-.dcol { display: flex; flex-direction: column; gap: 6px; }
-.dcol.space { width: 6px; }
-.dcell {
-  width: 24px; height: 36px; border-radius: 6px; display: flex; align-items: center; justify-content: center;
-  font-family: var(--mono); font-size: 18px; font-weight: 600; background: var(--surface2); color: var(--text);
-  animation: letterIn .2s ease-out var(--in) both;
+.answer-diff { display: flex; flex-direction: column; gap: 8px; }
+.diff-row { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 12px; border-radius: 12px; background: var(--surface2); }
+.diff-label { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+.diff-label .icon { width: 14px; height: 14px; stroke-width: 3; }
+.diff-row.yours .diff-label { color: var(--err); }
+.diff-row.correct .diff-label { color: var(--ok); }
+.diff-text { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.ch-word { display: inline-flex; flex-wrap: wrap; gap: 0; }
+.ch {
+  height: 32px; padding: 0 1px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 19px; font-weight: 600; color: var(--text); animation: letterIn .2s ease-out var(--in) both;
 }
-.dcol.space .dcell { width: 6px; background: transparent; }
-.dcell.bad { background: var(--err-bg); color: var(--err); box-shadow: inset 0 -2px 0 var(--err); }
-.dcell.good { background: var(--ok-bg); color: var(--ok); box-shadow: inset 0 -2px 0 var(--ok); }
-.dcell.extra { background: var(--err-bg); color: var(--err); text-decoration: line-through; text-decoration-thickness: 2px; }
-.dcell.missing { background: transparent; border: 2px dashed var(--err); }
-.dcell.empty { background: transparent; }
-.dcell.wob { animation: letterIn .2s ease-out var(--in) both, wob .45s ease-in-out var(--wob) 2; }
+.ch.bad, .ch.extra, .ch.good { padding: 0 3px; margin: 0 1px; }
+.ch.bad { background: var(--err-bg); color: var(--err); box-shadow: inset 0 -2px 0 var(--err); }
+.ch.extra, .ch.wrongWord { background: var(--err-bg); color: var(--err); text-decoration: line-through; text-decoration-thickness: 2px; }
+.ch.goodWord { background: var(--ok-bg); color: var(--ok); box-shadow: inset 0 -2px 0 var(--ok); }
+.ch.wrongWord, .ch.goodWord { border-radius: 0; padding: 0 2px; }
+.ch-word .ch.wrongWord:first-child, .ch-word .ch.goodWord:first-child { border-radius: 5px 0 0 5px; padding-left: 4px; }
+.ch-word .ch.wrongWord:last-child, .ch-word .ch.goodWord:last-child { border-radius: 0 5px 5px 0; padding-right: 4px; }
+.ch.miss { width: 16px; margin: 0 2px; border: 2px dashed var(--err); }
+.ch.good { background: var(--ok-bg); color: var(--ok); box-shadow: inset 0 -2px 0 var(--ok); }
+.ch.wob { animation: letterIn .2s ease-out var(--in) both, wob .45s ease-in-out var(--wob) 2; }
+.ch.wrongWord.wob, .ch.goodWord.wob, .ch.good.wob { animation: letterIn .2s ease-out var(--in) both; }
 
 .recap { padding: 4px 14px; border-radius: 12px; background: var(--surface2); }
 .recap div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 7px 0; font-size: 13.5px; line-height: 1.3; }
@@ -571,7 +575,7 @@ h1, h2, p { margin: 0; }
   .shake, .tile.wrong, .option.wrong, .spell-input.wrong, .cell.gap.wrong, .res-row.bad, .nudge { animation: none !important; }
   .timer.low { animation: none; }
   .cell.gap.cur::after { animation: none; }
-  .tile, .dcell, .dcell.wob, .res-row.good, .answer-block.good, .prompt-card.pop, .option.right, .tile.done { animation: fadeIn .15s ease both !important; }
+  .tile, .ch, .ch.wob, .res-row.good, .answer-block.good, .prompt-card.pop, .option.right, .tile.done { animation: fadeIn .15s ease both !important; }
   .bonus-chip { animation: fadeOut 1.3s steps(1, end) forwards; }
   .check-fly { animation: fadeOut .7s steps(1, end) forwards; }
   .confetti { animation: none; top: var(--y); transform: rotate(var(--r)); }

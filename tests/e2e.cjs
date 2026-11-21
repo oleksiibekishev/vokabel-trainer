@@ -215,8 +215,8 @@ async function main() {
   const typo = right.length > 4 ? right.slice(0, 2) + right.slice(3) + 'x' : right + 'x';
   assert.ok(!(await page.locator('.board').textContent()).includes('null'), 'no stray text on the board');
   await solveSpell(typo);
-  await page.waitForSelector('.modal-fail .diff-cols');
-  assert.ok(await page.locator('.dcell.missing, .dcell.bad, .dcell.extra').count() >= 1);
+  await page.waitForSelector('.modal-fail .answer-diff');
+  assert.ok(await page.locator('.diff-row.yours .ch.miss, .diff-row.yours .ch.bad, .diff-row.yours .ch.extra, .diff-row.yours .ch.wrongWord').count() >= 1);
   await page.waitForTimeout(1500);
   await shot(page, '07-spell-diff');
   await page.locator('.modal .btn', { hasText: 'Menü' }).click();
@@ -232,7 +232,7 @@ async function main() {
       if (cls.includes('board-gaps')) {
         await shot(page, '08-gaps');
         await solveGaps(true);
-        await page.waitForSelector('.modal-fail .diff-cols');
+        await page.waitForSelector('.modal-fail .answer-diff');
         await page.waitForTimeout(1200);
         await shot(page, '09-gaps-diff');
         gapsFound = true;

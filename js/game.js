@@ -1,6 +1,6 @@
 import {
   LEVELS, LEVEL_IDS, ROUND_SIZE, buildTypePlan, pickWords, pickDistractors, makeGaps, primaryForm,
-  checkAnswer, closestForm, diffWords, shuffle, wordFilterFor,
+  checkAnswer, closestForm, answerDiff, shuffle, wordFilterFor,
 } from './core.js';
 import * as store from './store.js';
 import { t, tSplit } from './i18n.js';
@@ -630,42 +630,29 @@ export class Game {
       h('p', { class: 'answer-line' }, h('span', { lang: 'de' }, info.word.de), ' = ', h('b', { lang: 'en' }, info.word.en)));
   }
 
-  /** Letter-by-letter comparison: top row = typed, bottom row = correct. */
+  /** Error comparison: "your answer" and "correct" as two labelled rows, wrong parts marked. */
   diffView(typed, expected) {
-    const ops = diffWords(typed, expected);
-    const groups = [[]];
-    ops.forEach((op) => {
-      if (op.a === ' ' || op.b === ' ') groups.push({ op }, []);
-      else groups[groups.length - 1].push(op);
-    });
-    const n = ops.length;
-    const longest = Math.max(1, ...groups.filter(Array.isArray).map((g) => g.length));
-    const avail = Math.min(420, window.innerWidth - 32) - 40 - 64;
-    const cw = cellWidth(longest, avail, 24, 14);
-    const fs = Math.min(18, Math.round(cw * 0.78));
-    const allIn = n * 2 * 45 + 200;
-    let i = 0;
-    const cellStyle = (delay, wob) => ({ width: cw + 'px', fontSize: fs + 'px', '--in': delay + 'ms', '--wob': wob + 'ms' });
-    const vis = (c) => (c === ' ' ? '␣' : c);
-    const col = (op) => {
-      const k = i++;
-      const flag = op.type !== 'ok';
-      const topCls = op.type === 'ok' ? '' : op.type === 'sub' ? 'bad' : op.type === 'extra' ? 'extra' : 'missing';
-      const botCls = op.type === 'ok' ? '' : op.type === 'extra' ? 'empty' : 'good';
-      return h('span', { class: 'dcol' },
-        h('span', { class: 'dcell ' + topCls + (flag ? ' wob' : ''), style: cellStyle(k * 45, allIn) }, op.type === 'missing' ? '' : vis(op.a)),
-        h('span', { class: 'dcell ' + botCls + (flag && op.type !== 'extra' ? ' wob' : ''), style: cellStyle((n + k) * 45, allIn) }, op.type === 'extra' ? '' : vis(op.b)));
+    const { top, bot } = answerDiff(typed, expected);
+    let k = 0;
+    const total = top.length + bot.length;
+    const wobAt = total * 35 + 250;
+    const row = (tokens) => {
+      const groups = [[]];
+      tokens.forEach((tk) => (tk.sp ? groups.push([]) : groups[groups.length - 1].push(tk)));
+      return groups.filter((g) => g.length).map((g) => h('span', { class: 'ch-word' }, g.map((tk) => {
+        const delay = (k++) * 35;
+        const flag = tk.miss || (tk.cls && tk.cls !== '');
+        const cls = 'ch' + (tk.miss ? ' miss' : tk.cls ? ' ' + tk.cls : '') + (flag ? ' wob' : '');
+        return h('span', { class: cls, style: { '--in': delay + 'ms', '--wob': wobAt + 'ms' } }, tk.miss ? '' : tk.ch);
+      })));
     };
-    const parts = groups.map((g) => {
-      if (Array.isArray(g)) return g.length ? h('span', { class: 'diff-group' }, g.map(col)) : null;
-      const sp = g.op;
-      if (sp.type === 'ok') { i++; return null; }
-      return h('span', { class: 'diff-group' }, col(sp));
-    });
-    const label = t('yourInput') + ' „' + typed + '“, ' + t('expected') + ' „' + expected + '“';
-    return h('div', { class: 'diff', role: 'img', 'aria-label': label },
-      h('div', { class: 'diff-labels' }, h('span', null, t('yourInput').toUpperCase()), h('span', null, t('expected').toUpperCase())),
-      h('div', { class: 'diff-cols' }, parts));
+    return h('div', { class: 'answer-diff' },
+      h('div', { class: 'diff-row yours', role: 'group', 'aria-label': t('yourInput') + ': ' + typed },
+        h('span', { class: 'diff-label' }, icon('close'), t('yourInput')),
+        h('span', { class: 'diff-text', lang: 'en', 'aria-hidden': 'true' }, row(top))),
+      h('div', { class: 'diff-row correct', role: 'group', 'aria-label': t('expected') + ': ' + expected },
+        h('span', { class: 'diff-label' }, icon('check'), t('expected')),
+        h('span', { class: 'diff-text', lang: 'en', 'aria-hidden': 'true' }, row(bot))));
   }
 
   timeUp() {

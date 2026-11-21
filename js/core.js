@@ -175,6 +175,46 @@ export function diffWords(typed, expected) {
   return ops.reverse();
 }
 
+/**
+ * Comparison for the error dialog, compared word by word.
+ * Returns two rows of tokens: { ch, cls } for a letter, { sp: true } between words,
+ * { miss: true } for a letter that was left out (top row only).
+ * cls: '' ok · 'bad' wrong letter · 'extra' letter too much · 'wrongWord' word is completely different ·
+ *      'good' correct letter to learn · 'goodWord' the correct word for a completely different one
+ * A word that is mostly wrong is marked as a whole instead of letter by letter.
+ */
+export function answerDiff(typed, expected) {
+  const top = [];
+  const bot = [];
+  const push = (row, ch, cls) => row.push(ch === ' ' ? (cls ? { ch: '␣', cls } : { sp: true }) : { ch, cls });
+  const word = (a, b) => {
+    const ops = diffWords(a, b);
+    const wrong = ops.filter((o) => o.type !== 'ok').length;
+    if (wrong > Math.max([...a].length, [...b].length) / 2) {
+      for (const ch of a) push(top, ch, a.trim() ? 'wrongWord' : '');
+      for (const ch of b) push(bot, ch, b.trim() ? 'goodWord' : '');
+      return;
+    }
+    for (const op of ops) {
+      if (op.type === 'ok') { push(top, op.a, ''); push(bot, op.b, ''); }
+      else if (op.type === 'sub') { push(top, op.a, 'bad'); push(bot, op.b, 'good'); }
+      else if (op.type === 'extra') push(top, op.a, 'extra');
+      else { top.push({ miss: true }); push(bot, op.b, 'good'); }
+    }
+  };
+  const tw = String(typed).trim().split(/\s+/).filter(Boolean);
+  const ew = String(expected).trim().split(/\s+/).filter(Boolean);
+  if (tw.length === ew.length) {
+    tw.forEach((a, i) => {
+      if (i) { top.push({ sp: true }); bot.push({ sp: true }); }
+      word(a, ew[i]);
+    });
+  } else {
+    word(tw.join(' '), ew.join(' '));
+  }
+  return { top, bot };
+}
+
 /** The accepted spelling closest to what was typed (for the error animation). */
 export function closestForm(typed, text) {
   const forms = displayForms(text);
