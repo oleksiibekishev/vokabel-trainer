@@ -24,10 +24,11 @@ test('parser skips the title and reads pairs', () => {
   assert.equal(r.words[1].de, 'Kollege / Kollegin');
 });
 
-test('built-in list has the 40 words of the uploaded file', () => {
+test('built-in list "KA1 E Vorbereitung" has the 36 words of the uploaded file', () => {
+  assert.equal(BUILTIN_LISTS[0].name, 'KA1 E Vorbereitung');
   const r = parseWordList(BUILTIN_LISTS[0].text);
-  assert.equal(r.words.length, 40);
-  assert.equal(r.skipped.length, 0);
+  assert.equal(r.words.length, 36);
+  assert.equal(r.skipped.length, 4, 'title and 3 section headers are skipped');
   const upload = process.env.VOCAB_FILE;
   if (upload && existsSync(upload)) {
     const fromFile = parseWordList(readFileSync(upload, 'utf8'));
@@ -50,6 +51,8 @@ test('answer checking: case, synonyms, optional "to"', () => {
   assert.ok(!checkAnswer('colleage', 'colleague = workmate'));
   assert.ok(!checkAnswer('', 'grinder'));
   assert.deepEqual(displayForms('Bedienpanel(e)'), ['Bedienpanel', 'Bedienpanele']);
+  assert.deepEqual(answerVariants('studies (pl)'), ['studies'], 'grammar notes are not part of the answer');
+  assert.ok(checkAnswer('everyday operations', 'everyday operations (pl)'));
   assert.ok(answerVariants('control panels').includes('control panels'));
 });
 

@@ -24,7 +24,7 @@ Auf dem Handy installieren:
 
 ## Eigene Wortlisten
 
-In der App: **Listen → Neue Liste hinzufügen** → Datei (.txt/.csv) wählen oder Text einfügen.
+In der App: **Listen & Wörter → Liste hinzufügen** → Namen eingeben (Pflicht), Text einfügen oder Datei (.txt/.csv) wählen.
 Mit **Teilen** entsteht ein Link, den man z. B. per WhatsApp an die Klasse schickt.
 
 Format – eine Zeile pro Wort:

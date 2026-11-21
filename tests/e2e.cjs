@@ -261,17 +261,33 @@ async function main() {
   await page.locator('.modal .btn', { hasText: 'Menü' }).click();
   await page.waitForSelector('.home');
 
-  // ---------- 7. add a list by pasting text, then share link import ----------
-  await page.locator('.list-card .btn', { hasText: 'Listen' }).click();
-  await page.waitForSelector('textarea');
-  await page.locator('textarea').fill('Wortliste\n\ndog - Hund\ncat - Katze\nhouse - Haus\ntree - Baum\ncar - Auto\nnoline');
-  await page.locator('#list-name').fill('Testliste');
+  // ---------- 7. lists & words screen, add a list (name is required), share link import ----------
+  await page.locator('.list-card .btn', { hasText: 'Listen & Wörter' }).click();
+  await page.waitForSelector('.list-rows');
+  assert.equal(await page.locator('.word-row').count(), words.length, 'words of the selected list are shown');
+  await page.locator('.btn', { hasText: 'Liste hinzufügen' }).click();
+  await page.waitForSelector('#list-text');
+  const order = await page.evaluate(() => [...document.querySelectorAll('#list-name, #list-text, label[for=file-in]')].map((e) => e.id || 'file'));
+  assert.deepEqual(order, ['list-name', 'list-text', 'file'], 'name first, then text, then file');
+  await page.locator('#list-text').fill('Wortliste\n\ndog - Hund\ncat - Katze\nhouse - Haus\ntree - Baum\ncar - Auto\nnoline');
   assert.ok((await page.locator('.preview').textContent()).includes('5 Wortpaare'));
+  assert.equal(await page.locator('#list-name').inputValue(), '', 'no automatic name');
+  assert.ok(await page.locator('.btn', { hasText: 'Liste speichern' }).isDisabled(), 'cannot save without a name');
+  assert.ok(await page.locator('.field-error').isVisible(), 'asks for a name');
+  await page.locator('#list-name').fill('   ');
+  assert.ok(await page.locator('.btn', { hasText: 'Liste speichern' }).isDisabled(), 'blank name is not a name');
+  await page.locator('#list-name').fill('Testliste');
   await shot(page, '11-new-list');
   await page.locator('.btn', { hasText: 'Liste speichern' }).click();
+  await page.waitForSelector('.list-rows');
+  assert.ok((await page.locator('.list-row.active').textContent()).includes('Testliste'), 'back on the lists screen, new list selected');
+  assert.equal(await page.locator('.word-row').count(), 5);
+  await page.goBack();
   await page.waitForSelector('.home');
   assert.equal((await page.locator('.list-name').textContent()).trim(), 'Testliste');
   assert.ok(await page.locator('.level-card.level-medium').isDisabled(), 'new list starts locked');
+  const homeOrder = await page.evaluate(() => [...document.querySelectorAll('.rules, .level-card')].map((e) => e.className.split(' ')[0]));
+  assert.equal(homeOrder[0], 'rules', 'rules come before the level cards');
 
   const shareUrl = await page.evaluate(async () => {
     const core = await import('./js/core.js');
@@ -293,10 +309,9 @@ async function main() {
   await ctx2.close();
 
   // words screen + settings render
-  await page.locator('.list-card .btn', { hasText: 'Listen' }).click();
-  await page.locator('.list-main', { hasText: 'Englisch – Liste 1' }).click();
-  await page.waitForSelector('.home');
-  await page.locator('.list-card .btn', { hasText: 'Wörter' }).click();
+  await page.locator('.list-card .btn', { hasText: 'Listen & Wörter' }).click();
+  await page.locator('.list-main', { hasText: 'KA1 E Vorbereitung' }).click();
+  await page.waitForFunction(() => document.querySelector('.list-row.active')?.textContent.includes('KA1 E Vorbereitung'));
   await page.locator('.segmented button', { hasText: 'Schwierigste' }).click();
   await shot(page, '14-words');
   assert.ok(await page.locator('.miss:not(.none)').count() >= 1, 'mistakes are counted');

@@ -88,7 +88,10 @@ export function parseWordList(text) {
   return { words, skipped, separator: sep };
 }
 
+const NOTE_RE = /\(\s*(?:pl|pl\.|plural|sg|sg\.|sing\.?|n|v|adj|adv|ae|be|us|uk|am|br|infml|fml|coll)\s*\)/gi;
+
 function expandParens(p) {
+  p = p.replace(NOTE_RE, '').replace(/\s+/g, ' ').trim();
   if (!/\([^)]*\)/.test(p)) return [p];
   const without = p.replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim();
   const withIt = p.replace(/[()]/g, '').replace(/\s+/g, ' ').trim();

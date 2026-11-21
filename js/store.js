@@ -1,5 +1,5 @@
 // Everything is saved in this browser (localStorage). No server.
-import { BUILTIN_LISTS } from './builtin-lists.js';
+import { BUILTIN_LISTS, RETIRED_BUILTINS } from './builtin-lists.js';
 import { parseWordList, LEVELS, LEVEL_IDS, createFixedRounds, fixedRoundsValid } from './core.js';
 
 const KEY = 'vokabeltrainer.v1';
@@ -34,6 +34,15 @@ function sanitize(s) {
 }
 
 function mergeBuiltins() {
+  for (const id of RETIRED_BUILTINS) {
+    if (state.lists[id] && state.lists[id].builtin) {
+      delete state.lists[id];
+      delete state.progress[id];
+      delete state.fixed[id];
+      delete state.stats[id];
+      state.order = state.order.filter((x) => x !== id);
+    }
+  }
   BUILTIN_LISTS.forEach((b, i) => {
     if (state.removedBuiltins.includes(b.id)) return;
     const words = parseWordList(b.text).words;

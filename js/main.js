@@ -6,46 +6,52 @@ import {
 } from './core.js';
 import { Game } from './game.js';
 
-export const APP_VERSION = '1.2.1';
+export const APP_VERSION = '1.3.0';
 
 const app = document.getElementById('app');
 let game = null;
 let deferredInstall = null;
 let wordsSort = 'order';
 
-// ---------- navigation (Android back button returns to the menu) ----------
+// ---------- navigation (Android back button goes one screen back) ----------
 
 function show(name, arg) {
   if (game) { game.destroy(); game = null; }
   document.querySelectorAll('.modal-wrap').forEach((m) => m.remove());
   if (name === 'game') return showGame(arg);
-  const screens = { home: renderHome, lists: renderLists, words: renderWords, settings: renderSettings };
-  app.replaceChildren((screens[name] || renderHome)());
+  const screens = { home: renderHome, lists: renderLists, addList: renderAddList, settings: renderSettings };
+  app.replaceChildren((screens[name] || renderHome)(arg));
   window.scrollTo(0, 0);
 }
 
 function navigate(name, arg) {
-  if (!history.state || history.state.screen !== 'sub') history.pushState({ screen: 'sub' }, '');
+  history.pushState({ screen: name }, '');
   show(name, arg);
 }
 
-function goHome() {
-  if (history.state && history.state.screen === 'sub') history.back();
+function goBack() {
+  if (history.state && history.state.screen && history.state.screen !== 'home') history.back();
   else show('home');
 }
 
 window.addEventListener('popstate', () => {
   if (game && !game.ended && !game.destroyed) {
-    history.pushState({ screen: 'sub' }, '');
+    history.pushState({ screen: 'game' }, '');
     game.askQuit();
     return;
   }
-  show('home');
+  const screen = (history.state && history.state.screen) || 'home';
+  if (screen === 'game') {
+    history.replaceState({ screen: 'home' }, '');
+    show('home');
+    return;
+  }
+  show(screen);
 });
 
 function topbar(title) {
   return h('header', { class: 'topbar' },
-    h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('back'), onclick: goHome }, icon('back')),
+    h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('back'), onclick: goBack }, icon('back')),
     h('h1', { class: 'topbar-title' }, title));
 }
 
@@ -66,7 +72,7 @@ function renderHome() {
     wrap.appendChild(h('div', { class: 'empty-card' },
       h('span', { class: 'icon-tile', 'aria-hidden': 'true' }, icon('list')),
       h('span', { class: 'serif' }, t('emptyLists')),
-      h('button', { class: 'btn primary', type: 'button', onclick: () => navigate('lists') }, t('newList'))));
+      h('button', { class: 'btn primary', type: 'button', onclick: () => navigate('addList') }, icon('listPlus'), t('addList'))));
     return wrap;
   }
 
@@ -75,21 +81,19 @@ function renderHome() {
     h('div', { class: 'list-name' }, list.name),
     h('div', { class: 'count' }, t('wordsN', { n: list.words.length })),
     h('div', { class: 'btn-row' },
-      h('button', { class: 'btn outline', type: 'button', onclick: () => navigate('words') }, icon('book'), t('showWords')),
-      h('button', { class: 'btn outline', type: 'button', onclick: () => navigate('lists') }, icon('list'), t('changeList')))));
+      h('button', { class: 'btn outline', type: 'button', onclick: () => navigate('lists') }, icon('book'), t('listsAndWords')))));
 
   const enough = list.words.length >= MIN_WORDS;
   if (!enough) {
     wrap.appendChild(h('div', { class: 'notice-err', role: 'alert' }, icon('alert'),
       h('span', null, t('listTooSmall', { n: list.words.length, min: MIN_WORDS }))));
   }
-  wrap.appendChild(h('div', { class: 'levels' }, LEVEL_IDS.map((lvl) => levelCard(list, lvl, enough))));
-
   const rules = h('details', { class: 'rules', open: !store.settings().rulesClosed },
     h('summary', null, t('rulesTitle'), icon('chevronDown')),
     h('ol', null, tList('rules').map((r, i) => h('li', null, h('span', { class: 'num' }, String(i + 1)), h('span', null, r)))));
   rules.addEventListener('toggle', () => store.setSetting('rulesClosed', !rules.open));
   wrap.appendChild(rules);
+  wrap.appendChild(h('div', { class: 'levels' }, LEVEL_IDS.map((lvl) => levelCard(list, lvl, enough))));
   return wrap;
 }
 
@@ -178,104 +182,137 @@ function showGame(level) {
   window.scrollTo(0, 0);
   game = new Game({
     root, list, level,
-    onMenu: () => { game = null; goHome(); },
+    onMenu: () => { game = null; goBack(); },
     onNextLevel: (lvl) => showGame(lvl),
   });
   game.start();
 }
 
-// ---------- lists ----------
+// ---------- lists & words ----------
 
 function renderLists() {
   const wrap = h('div', { class: 'screen' }, topbar(t('lists')));
+  wrap.appendChild(h('button', { class: 'btn primary', type: 'button', onclick: () => navigate('addList') }, icon('listPlus'), t('addList')));
   const cur = store.currentList();
   const all = store.lists();
-  if (all.length) {
-    wrap.appendChild(h('section', { class: 'card list-rows' }, all.map((l) => {
-      const active = cur && cur.id === l.id;
-      return h('div', { class: 'list-row' + (active ? ' active' : '') },
-        h('button', {
-          class: 'list-main', type: 'button', 'aria-current': active ? 'true' : null,
-          onclick: () => { store.selectList(l.id); goHome(); },
-        },
-        h('span', { class: 'list-title' }, l.name, active ? h('span', { class: 'badge' }, t('active')) : null),
-        h('span', { class: 'list-count' }, t('wordsN', { n: l.words.length }))),
-        h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('shareList', { name: l.name }), onclick: () => shareList(l) }, icon('share')),
-        h('button', {
-          class: 'icon-btn err', type: 'button', 'aria-label': t('deleteList', { name: l.name }),
-          onclick: async () => {
-            if (await confirmDialog(t('deleteListTitle'), t('deleteListText', { name: l.name }), t('delete'), { danger: true })) {
-              store.deleteList(l.id);
-              show('lists');
-            }
-          },
-        }, icon('trash')));
-    })));
+  if (!all.length) {
+    wrap.appendChild(h('div', { class: 'info-dashed' }, icon('info'), t('emptyLists')));
+    return wrap;
   }
-  wrap.appendChild(newListForm());
+  wrap.appendChild(h('section', { class: 'card list-rows', 'aria-label': t('chooseList') }, all.map((l) => {
+    const active = cur && cur.id === l.id;
+    return h('div', { class: 'list-row' + (active ? ' active' : '') },
+      h('button', {
+        class: 'list-main', type: 'button', 'aria-pressed': String(!!active),
+        onclick: () => { store.selectList(l.id); show('lists'); },
+      },
+      h('span', { class: 'list-title' }, l.name, active ? h('span', { class: 'badge' }, t('active')) : null),
+      h('span', { class: 'list-count' }, t('wordsN', { n: l.words.length }))),
+      h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('shareList', { name: l.name }), onclick: () => shareList(l) }, icon('share')),
+      h('button', {
+        class: 'icon-btn err', type: 'button', 'aria-label': t('deleteList', { name: l.name }),
+        onclick: async () => {
+          if (await confirmDialog(t('deleteListTitle'), t('deleteListText', { name: l.name }), t('delete'), { danger: true })) {
+            store.deleteList(l.id);
+            show('lists');
+          }
+        },
+      }, icon('trash')));
+  })));
+  if (cur) wrap.appendChild(wordsSection(cur));
   return wrap;
 }
 
-function newListForm() {
-  const nameInput = h('input', { class: 'field', id: 'list-name', type: 'text', maxlength: '60', placeholder: t('namePlaceholder') });
-  const area = h('textarea', { class: 'field area', id: 'list-text', rows: '7', placeholder: t('pastePlaceholder'), spellcheck: 'false' });
+function wordsSection(list) {
+  const st = store.stats(list.id);
+  const mk = (id) => (st[id] ? st[id].w || 0 : 0);
+  const words = list.words.slice();
+  if (wordsSort === 'hard') words.sort((a, b) => mk(b.id) - mk(a.id));
+  return h('section', { class: 'stack words-section' },
+    h('div', { class: 'section-head' },
+      h('h2', null, t('wordsIn', { name: list.name })),
+      h('span', { class: 'list-count' }, t('wordsN', { n: list.words.length }))),
+    h('div', { class: 'segmented', role: 'group', 'aria-label': t('sorting') },
+      ['order', 'hard'].map((k) => h('button', {
+        class: wordsSort === k ? 'on' : '', type: 'button', 'aria-pressed': String(wordsSort === k),
+        onclick: () => { wordsSort = k; show('lists'); },
+      }, t(k === 'order' ? 'sortOrder' : 'sortHard')))),
+    wordsSort === 'hard' && !words.some((w) => mk(w.id) > 0) ? h('div', { class: 'info-dashed' }, icon('info'), t('noMistakes')) : null,
+    h('div', { class: 'word-table' },
+      h('div', { class: 'word-table-head' }, h('span', null, t('wordsHead')), h('span', null, t('mistakesHead'))),
+      words.map((w) => h('div', { class: 'word-row' },
+        h('div', { class: 'words' }, h('span', { class: 'w-en', lang: 'en' }, w.en), h('span', { class: 'w-de', lang: 'de' }, w.de)),
+        mk(w.id)
+          ? h('span', { class: 'miss' }, icon('close'), String(mk(w.id)))
+          : h('span', { class: 'miss none', 'aria-label': t('noMistakesAria') }, '–')))));
+}
+
+function renderAddList() {
+  const wrap = h('div', { class: 'screen' }, topbar(t('newList')));
+  const nameInput = h('input', { class: 'field', id: 'list-name', type: 'text', maxlength: '60', placeholder: t('namePlaceholder'), required: true, autocomplete: 'off' });
+  const area = h('textarea', { class: 'field area', id: 'list-text', rows: '8', placeholder: t('pastePlaceholder'), spellcheck: 'false' });
   const preview = h('div', { class: 'preview', hidden: true });
   const fileInput = h('input', { type: 'file', accept: '.txt,.csv,.tsv,text/plain,text/csv', class: 'sr-only', id: 'file-in' });
+  const nameHint = h('p', { class: 'field-error', hidden: true }, icon('alert'), t('nameRequired'));
   const saveBtn = h('button', { class: 'btn primary tall', type: 'button', disabled: true }, t('saveList'));
 
   const refresh = () => {
     const r = parseWordList(area.value);
-    const ok = r.words.length >= MIN_WORDS;
-    saveBtn.disabled = !ok;
+    const wordsOk = r.words.length >= MIN_WORDS;
+    const named = nameInput.value.trim().length > 0;
+    saveBtn.disabled = !(wordsOk && named);
+    nameHint.hidden = named || !area.value.trim();
+    nameInput.classList.toggle('invalid', !named && !!area.value.trim());
     preview.hidden = !area.value.trim();
     if (preview.hidden) { preview.replaceChildren(); return; }
     preview.replaceChildren(
-      ok
+      wordsOk
         ? h('div', { class: 'preview-status ok' }, icon('check'), t('recognized', { n: r.words.length }))
         : h('div', { class: 'preview-status err' }, icon('alert'), t('tooFew', { n: MIN_WORDS })),
       r.words.length ? h('div', { class: 'pair-mini' }, r.words.slice(0, 4).map((w) => h('div', null,
         h('span', { lang: 'en' }, w.en), h('span', { lang: 'de' }, w.de)))) : null,
       r.skipped.length ? h('details', { class: 'skipped' },
         h('summary', null, r.skipped.length === 1 ? t('skippedOne') : t('skippedLines', { n: r.skipped.length }), icon('chevronDown')),
-        r.skipped.slice(0, 20).map((s) => h('div', null, s))) : null,
+        r.skipped.slice(0, 20).map((x) => h('div', null, x))) : null,
     );
   };
   area.addEventListener('input', refresh);
+  nameInput.addEventListener('input', refresh);
   fileInput.addEventListener('change', async () => {
     const f = fileInput.files && fileInput.files[0];
     if (!f) return;
     area.value = await f.text();
-    if (!nameInput.value) nameInput.value = f.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim().slice(0, 60);
     refresh();
   });
   saveBtn.addEventListener('click', () => {
     const r = parseWordList(area.value);
-    if (r.words.length < MIN_WORDS) return;
+    const name = nameInput.value.trim();
+    if (r.words.length < MIN_WORDS || !name) return;
     const id = listIdFor(r.words);
     if (store.get().lists[id]) {
       store.selectList(id);
       toast(t('listExists'));
     } else {
-      const name = nameInput.value.trim() || 'Liste ' + (store.lists().length + 1);
       store.addList({ id, name, words: r.words, builtin: false });
       toast(t('listSaved'), { icon: 'check' });
     }
-    goHome();
+    goBack();
   });
 
-  return h('section', { class: 'card stack' },
-    h('h2', { class: 'card-title' }, t('newList')),
-    h('label', { class: 'btn outline', for: 'file-in' }, icon('upload'), t('chooseFile')),
-    fileInput,
-    h('div', { class: 'field-group' },
-      h('label', { class: 'field-label', for: 'list-text' }, t('orPaste')),
-      area,
-      h('p', { class: 'hint-small' }, t('formatHint'))),
+  wrap.appendChild(h('section', { class: 'card stack' },
     h('div', { class: 'field-group' },
       h('label', { class: 'field-label', for: 'list-name' }, t('listName')),
-      nameInput),
+      nameInput,
+      nameHint),
+    h('div', { class: 'field-group' },
+      h('label', { class: 'field-label', for: 'list-text' }, t('pasteWords')),
+      area,
+      h('p', { class: 'hint-small' }, t('formatHint'))),
+    h('label', { class: 'btn outline', for: 'file-in' }, icon('upload'), t('orFile')),
+    fileInput,
     preview,
-    saveBtn);
+    saveBtn));
+  return wrap;
 }
 
 async function shareList(list) {
@@ -320,34 +357,6 @@ async function handleImportLink() {
   store.addList({ id, name: incoming.name, words: incoming.words, builtin: false });
   show('home');
   toast(t('listSaved'), { icon: 'check' });
-}
-
-// ---------- words ----------
-
-function renderWords() {
-  const list = store.currentList();
-  const wrap = h('div', { class: 'screen' }, topbar(list ? list.name : t('showWords')));
-  if (!list) return wrap;
-  const st = store.stats(list.id);
-  const mk = (id) => (st[id] ? st[id].w || 0 : 0);
-  wrap.appendChild(h('div', { class: 'segmented', role: 'group', 'aria-label': t('sorting') },
-    ['order', 'hard'].map((k) => h('button', {
-      class: wordsSort === k ? 'on' : '', type: 'button', 'aria-pressed': String(wordsSort === k),
-      onclick: () => { wordsSort = k; show('words'); },
-    }, t(k === 'order' ? 'sortOrder' : 'sortHard')))));
-  const words = list.words.slice();
-  if (wordsSort === 'hard') words.sort((a, b) => mk(b.id) - mk(a.id));
-  if (wordsSort === 'hard' && !words.some((w) => mk(w.id) > 0)) {
-    wrap.appendChild(h('div', { class: 'info-dashed' }, icon('info'), t('noMistakes')));
-  }
-  wrap.appendChild(h('section', { class: 'word-table' },
-    h('div', { class: 'word-table-head' }, h('span', null, t('wordsHead')), h('span', null, t('mistakesHead'))),
-    words.map((w) => h('div', { class: 'word-row' },
-      h('div', { class: 'words' }, h('span', { class: 'w-en', lang: 'en' }, w.en), h('span', { class: 'w-de', lang: 'de' }, w.de)),
-      mk(w.id)
-        ? h('span', { class: 'miss' }, icon('close'), String(mk(w.id)))
-        : h('span', { class: 'miss none', 'aria-label': t('noMistakesAria') }, '–')))));
-  return wrap;
 }
 
 // ---------- settings ----------
