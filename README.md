@@ -18,7 +18,7 @@ Auf dem Handy installieren:
 
 - Ein Timer für das ganze Level, jede geschaffte Runde gibt Bonuszeit.
 - Ein Fehler → zurück zu Runde 1 (mit Animation, was falsch war).
-- Runde 1–3 haben immer dieselben Wörter, ab Runde 4 zufällig.
+- Runde 1–3 haben dieselben Wörter, bis man das Level schafft – danach werden sie neu gemischt (andere Wörter). Ab Runde 4 immer zufällig.
 - „Mittel“ wird nach „Leicht“ freigeschaltet, „Schwer“ nach „Mittel“ – pro Wortliste.
 - Wörter mit Fehlern kommen öfter dran.
 

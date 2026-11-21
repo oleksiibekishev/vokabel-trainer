@@ -111,6 +111,13 @@ test('plans and fixed rounds', () => {
     assert.equal(new Set(all).size, all.length);
   }
   assert.ok(!fixedRoundsValid('easy', [{ type: 'pairs', ids: ['nope'] }], words));
+  for (const lvl of Object.keys(LEVELS)) {
+    const first = createFixedRounds(lvl, words);
+    const old = new Set(first.flatMap((r) => r.ids));
+    const next = createFixedRounds(lvl, words, Math.random, old);
+    assert.ok(fixedRoundsValid(lvl, next, words));
+    assert.equal(next.flatMap((r) => r.ids).filter((id) => old.has(id)).length, 0, lvl + ': renewed rounds use other words');
+  }
 });
 
 test('share codes round-trip and reject garbage', async () => {

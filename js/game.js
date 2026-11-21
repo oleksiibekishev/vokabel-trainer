@@ -690,6 +690,7 @@ export class Game {
     sfx.win();
     const secs = Math.ceil(this.timeLeft / 1000);
     const res = store.recordResult(this.list.id, this.level, { completed: true, timeLeft: secs, round: this.cfg.rounds });
+    store.renewFixedRounds(this.list.id, this.level, this.words);
     this.confetti();
     const next = LEVEL_IDS[LEVEL_IDS.indexOf(this.level) + 1];
     const lines = [
@@ -699,6 +700,7 @@ export class Game {
     ];
     if (res.newRecord) lines.push(h('span', { class: 'record-chip' }, icon('star'), t('newRecord')));
     if (res.unlocked) lines.push(h('p', { class: 'unlock-line' }, icon('check'), t('unlocked', { level: t('level_' + res.unlocked) })));
+    lines.push(h('p', { class: 'modal-text new-words' }, t('newFixed')));
     if (!next) lines.push(h('p', { class: 'modal-text' }, t('allDone')));
     const buttons = next
       ? [

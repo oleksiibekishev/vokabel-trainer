@@ -167,6 +167,14 @@ export function fixedRounds(listId, level, words) {
   return f[level];
 }
 
+/** After a level is passed: rounds 1–3 get new words next time. */
+export function renewFixedRounds(listId, level, words) {
+  const f = (state.fixed[listId] = state.fixed[listId] || {});
+  const old = new Set(((f[level]) || []).flatMap((r) => r.ids || []));
+  f[level] = createFixedRounds(level, words, Math.random, old);
+  save();
+}
+
 // ---------- mistake statistics ----------
 
 export function stats(listId) {

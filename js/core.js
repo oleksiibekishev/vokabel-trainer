@@ -289,10 +289,13 @@ export function wordFilterFor(type) {
   return null;
 }
 
-/** Words for the 3 fixed rounds, chosen once per list and level. */
-export function createFixedRounds(levelId, words, rnd = Math.random) {
+/**
+ * Words for the 3 fixed rounds of a level. They stay the same until the level is
+ * passed; then new ones are drawn, avoiding the previous words while possible.
+ */
+export function createFixedRounds(levelId, words, rnd = Math.random, avoid = new Set()) {
   const L = LEVELS[levelId];
-  const used = new Set();
+  const used = new Set(avoid);
   return L.fixed.map((type) => {
     const ws = pickWords(words, ROUND_SIZE[type], { used, rnd, filter: wordFilterFor(type) });
     ws.forEach((w) => used.add(w.id));

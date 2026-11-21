@@ -180,6 +180,13 @@ async function main() {
   await page.locator('.modal .btn', { hasText: 'Menü' }).click();
   await page.waitForSelector('.home');
   assert.ok(!(await page.locator('.level-card.level-medium').isDisabled()), 'medium unlocked');
+  await page.locator('.level-card.level-easy').click();
+  await page.waitForSelector('.tile');
+  const renewed = (await page.locator('.tile[data-side=en]').allTextContents()).map((x) => x.trim());
+  assert.equal(renewed.filter((w) => firstRound.map((x) => x.trim()).includes(w)).length, 0, 'after passing, round 1 has new words');
+  await page.locator('.game-top .icon-btn').click();
+  await page.locator('.modal .btn', { hasText: 'Beenden' }).click();
+  await page.waitForSelector('.home');
   await shot(page, '05-home-after-easy');
 
   // ---------- 3. medium: mixed grid + all game types ----------

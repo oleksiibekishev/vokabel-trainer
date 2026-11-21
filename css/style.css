@@ -533,6 +533,7 @@ h1, h2, p { margin: 0; }
 .rest-num .unit { font-family: var(--sans); font-size: 20px; font-weight: 600; color: var(--muted); }
 .record-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); font-size: 13.5px; font-weight: 700; }
 .record-chip .icon { width: 15px; height: 15px; }
+.new-words { font-size: 13.5px; }
 .unlock-line { display: flex; align-items: center; gap: 6px; font-size: 14.5px; font-weight: 600; color: var(--ok); }
 .unlock-line .icon { width: 16px; height: 16px; stroke-width: 2.75; }
 .btn .icon.accent { color: var(--accent); stroke-width: 2.2; }
