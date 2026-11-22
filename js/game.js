@@ -672,7 +672,6 @@ export class Game {
       left.forEach((l, i) => cells.push(l, right[i]));
       grid = h('div', { class: 'pairs grid' }, cells);
     }
-    if (this.mod === 'wirbel') grid.classList.add('wirbel');
     this.board.appendChild(grid);
     this.pairs = { sel: null, left: words.length, matched: 0, total: words.length, extra, grid };
   }
@@ -688,6 +687,8 @@ export class Game {
     ps.extra = [];
     const grid = ps.grid;
     const doneTiles = [...grid.querySelectorAll('.tile.done')];
+    // from now on the tiles only move with the Wirbel animations (no fade-in when they are re-ordered)
+    grid.classList.add('wirbel');
     this.hold('wirbel');
     this.later(150, () => doneTiles.forEach((el) => el.classList.add('vanish')));
     this.later(470, () => {

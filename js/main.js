@@ -6,7 +6,7 @@ import {
 } from './core.js';
 import { Game } from './game.js';
 
-export const APP_VERSION = '1.6.0';
+export const APP_VERSION = '1.6.1';
 
 const app = document.getElementById('app');
 let game = null;

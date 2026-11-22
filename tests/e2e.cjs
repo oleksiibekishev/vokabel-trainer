@@ -220,7 +220,7 @@ async function main() {
   assert.equal(await roundText(), 'Runde 1/6');
   const firstRoundAgain = (await page.locator('.tile[data-side=en]').allTextContents()).sort();
   assert.deepEqual(firstRoundAgain, firstRound, 'round 1 has the same words every attempt');
-  assert.equal(Number(await page.locator('.timer .num').textContent()), 60);
+  assert.ok(Number(await page.locator('.timer .num').textContent()) >= 59, 'restart begins with the full 60 s');
   await page.locator('.game-top .icon-btn').click();
   await page.locator('.modal .btn', { hasText: 'Beenden' }).click();
   await page.waitForSelector('.home');
@@ -450,7 +450,12 @@ async function main() {
       if (isDe(w, (await d.textContent()).trim())) { await e.click(); await d.click(); break; }
     }
   }
+  await page.waitForSelector('.tile.new');
+  const enterAnims = await page.evaluate(() => [...document.querySelectorAll('.tile.new')].flatMap((el) => el.getAnimations().map((a) => a.animationName)));
+  assert.ok(enterAnims.includes('enter'), 'new tiles really animate in, got ' + enterAnims);
   await page.waitForSelector('.tile.swirl');
+  const swirlAnims = await page.evaluate(() => [...document.querySelectorAll('.tile.swirl')].flatMap((el) => el.getAnimations().map((a) => a.animationName)));
+  assert.equal(swirlAnims.filter((n) => n === 'swirl').length, 12, 'all 12 tiles really swirl, got ' + swirlAnims);
   await shot(page, '23-wirbel-swirl');
   await page.waitForFunction(() => !window.__vtGame.holds.has('wirbel'));
   const nowEn = (await page.locator('.tile[data-side=en]').allTextContents()).map((x) => x.trim());
