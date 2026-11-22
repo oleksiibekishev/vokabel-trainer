@@ -69,6 +69,8 @@ Warmer, ruhiger Stil: Ivory-Hintergrund, dunkle Hauptbuttons, Clay (`#D97757`) n
 
 Übergänge: Listen und Einstellungen kommen als Blatt von unten (der Startbildschirm tritt zurück), ein Spiel blendet ruhig ein und aus. Während ein Dialog offen ist, wird auch die Statusleiste abgedunkelt.
 
+Systemleisten der installierten App: `theme_color` und `background_color` im Manifest sind dunkel (`#262624`). Chrome färbt damit die Navigationsleiste und den Fensterhintergrund (sichtbar z. B. beim Öffnen der Tastatur) – im Manifest gibt es nur eine Farbe für beide Modi. Installierte Apps übernehmen Manifest-Änderungen erst beim nächsten WebAPK-Update (bis ~1 Tag) oder nach Neuinstallation.
+
 Spezialrunden: Wirbel in Clay, Kombo und Extrazeit in Blau (`--extra` `#2A65A8`), Zeitraffer in Violett (`--rush` `#8E5FD0`, gestreifter Zeitbalken). Eine Spezialrunde ist in der Punktreihe eine Raute. Bei „Bewegung reduzieren“ gibt es statt Bewegung nur Ein- und Ausblenden.
 
 Schriften (selbst gehostet in `fonts/`, SIL Open Font License): Source Serif 4 (Titel, Timer), Manrope (Text), JetBrains Mono (Lücken, Buchstabenvergleich). Icons: Lucide (ISC-Lizenz).

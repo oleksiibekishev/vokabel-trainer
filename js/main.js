@@ -7,7 +7,7 @@ import {
 import { Game } from './game.js';
 import * as streakUI from './streak.js';
 
-export const APP_VERSION = '1.7.0';
+export const APP_VERSION = '1.7.1';
 
 const app = document.getElementById('app');
 let game = null;

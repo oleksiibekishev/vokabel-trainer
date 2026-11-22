@@ -164,7 +164,7 @@ export function modal({ title, icon: ic, body, buttons, cls = '', center = false
       done = true;
       dimStatusBar(dimKey, false);
       wrap.classList.add('closing');
-      setTimeout(() => wrap.remove(), 160);
+      setTimeout(() => wrap.remove(), clear ? 160 : 240);
       if (prevFocus && prevFocus.focus && prevFocus.isConnected) {
         try { prevFocus.focus({ preventScroll: true }); } catch { /* ignore */ }
       }

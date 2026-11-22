@@ -657,6 +657,9 @@ h1, h2, p { margin: 0; }
 .modal-wrap { position: fixed; inset: 0; z-index: 50; padding: 16px; background: var(--scrim); display: grid; place-items: center; animation: fadeIn .15s ease; }
 .modal-wrap.clear { background: transparent; }
 .modal-wrap.closing { animation: fadeOut .16s ease forwards; }
+/* Android colours the status bar a moment after the page (theme-color): a slower scrim keeps both in step */
+.modal-wrap:not(.clear) { animation-duration: .3s; }
+.modal-wrap.closing:not(.clear) { animation-duration: .24s; }
 .modal {
   width: 100%; max-width: 420px; max-height: calc(100dvh - 32px); overflow: auto; padding: 22px 20px 20px; border-radius: 20px;
   background: var(--surface); border: 1px solid var(--line); color: var(--text); box-shadow: var(--shadow-lg);
