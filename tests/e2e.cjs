@@ -197,9 +197,9 @@ async function main() {
   await shot(page, '02-easy-round1');
   // timer runs
   const t0 = Number(await page.locator('.timer .num').textContent());
-  await page.waitForTimeout(1300);
+  await page.waitForTimeout(2200);
   const t1 = Number(await page.locator('.timer .num').textContent());
-  assert.ok(t1 < t0, 'timer counts down');
+  assert.ok(t1 < t0, 'timer counts down (after the short pause while the game comes in)');
   // select en, switch selection to another en (no error), then wrong de
   const enTiles = page.locator('.tile[data-side=en]');
   await enTiles.nth(0).click();
@@ -222,8 +222,14 @@ async function main() {
   assert.deepEqual(firstRoundAgain, firstRound, 'round 1 has the same words every attempt');
   assert.ok(Number(await page.locator('.timer .num').textContent()) >= 59, 'restart begins with the full 60 s');
   await page.locator('.game-top .icon-btn').click();
+  assert.ok((await page.locator('.modal').textContent()).includes('Tagesserie') === false, 'today already counts – no hint in the quit dialog');
   await page.locator('.modal .btn', { hasText: 'Beenden' }).click();
   await page.waitForSelector('.home');
+  // the lost game above was the first finished game today: Tagesserie +1
+  await page.waitForFunction(() => document.querySelector('.streak-chip .roll')?.textContent === '1' && document.querySelector('.streak-hint.done'));
+  assert.ok((await page.locator('.streak-hint').textContent()).includes('Heute geschafft'));
+  assert.equal(await page.locator('.week .day.today.done').count(), 1, 'today is filled in the week');
+  await shot(page, '03b-streak-plus');
 
   // ---------- 2. play easy to the end ----------
   const easyTypes = await playLevel('easy', '04-easy');
@@ -244,6 +250,8 @@ async function main() {
   // ---------- 3. medium: mixed grid + all game types ----------
   const medTypes = await playLevel('medium', '06-medium');
   assert.ok(medTypes.includes('gaps') && medTypes.includes('choice') && !medTypes.includes('spell'), 'medium: gaps, no spelling');
+  assert.ok((await page.locator('.modal-win').textContent()).includes('Endlos'), 'Endlos is opened for all lists');
+  assert.ok((await page.locator('.modal-win .st-chip').textContent()).includes('1 Tag'), 'Tagesserie chip in the result');
   await page.locator('.modal .btn', { hasText: 'Menü' }).click();
   await page.waitForSelector('.home');
 
@@ -342,7 +350,7 @@ async function main() {
   assert.ok((await page.locator('.list-row.active').textContent()).includes('Testliste'), 'back on the lists screen, new list selected');
   assert.equal(await page.locator('.word-row').count(), 5);
   await page.goBack();
-  await page.waitForSelector('.home');
+  await page.waitForFunction(() => document.querySelector('.home') && !document.querySelector('.sheet') && !document.documentElement.classList.contains('busy'));
   assert.equal((await page.locator('.list-name').textContent()).trim(), 'Testliste');
   assert.ok(await page.locator('.level-card.level-medium').isDisabled(), 'new list starts locked');
   const homeOrder = await page.evaluate(() => [...document.querySelectorAll('.rules, .level-card')].map((e) => e.className.split(' ')[0]));
@@ -377,7 +385,7 @@ async function main() {
   await shot(page, '14-words');
   assert.ok(await page.locator('.miss:not(.none)').count() >= 1, 'mistakes are counted');
   await page.goBack();
-  await page.waitForSelector('.home');
+  await page.waitForFunction(() => document.querySelector('.home') && !document.querySelector('.sheet') && !document.documentElement.classList.contains('busy'));
   await page.locator('.home-top .icon-btn').click();
   await page.waitForSelector('.switch');
   await shot(page, '15-settings');
@@ -493,17 +501,10 @@ async function main() {
   await page.locator('.modal .btn', { hasText: 'Beenden' }).click();
   await page.waitForSelector('.home');
 
-  // ---------- 8d. Endlos: unlocked after Schwer, no limit, smaller bonus from round 11 ----------
+  // ---------- 8d. Endlos: open since "Mittel" was passed, no limit, smaller bonus from round 11 ----------
   await page.evaluate(() => { window.__vtMods = 'off'; });
-  assert.ok(await page.locator('.mode-card.mode-endless').isDisabled(), 'Endlos is locked before Schwer');
-  await setState(() => {
-    const k = 'vokabeltrainer.v1';
-    const s = JSON.parse(localStorage.getItem(k));
-    s.progress[s.currentListId].hard = { completed: true, bestTimeLeft: 5, bestRound: 15, plays: 1 };
-    localStorage.setItem(k, JSON.stringify(s));
-  });
-  await page.reload();
-  await page.waitForSelector('.home');
+  assert.ok(!(await page.locator('.mode-card.mode-endless').isDisabled()), 'Endlos is open after Mittel');
+  assert.ok(await page.evaluate(() => JSON.parse(localStorage.getItem('vokabeltrainer.v1')).unlocks.endless === true), 'saved for good');
   await shot(page, '25-home-modes');
   await page.locator('.mode-card.mode-endless').click();
   await page.waitForSelector('.board');
@@ -567,6 +568,7 @@ async function main() {
     await page.waitForFunction((s) => window.__vtGame.qSeq !== s || document.querySelector('.modal-win'), s0);
   }
   await page.waitForSelector('.modal-win');
+  assert.equal(await page.locator('main.board').evaluate((b) => b.children.length), 0, 'the last word does not come back after it flew away');
   assert.ok(mistakeDone, 'a mistake was tested');
   assert.ok((await page.locator('.modal-win').textContent()).includes('Alle Fehlerwörter geübt'));
   assert.ok(answered >= nMistakes * 3, 'every word needs 3 right answers');
@@ -580,11 +582,87 @@ async function main() {
   await page.waitForSelector('.timing');
   assert.equal(await page.locator('.timing .num-field').count(), 9, 'start, bonus and limit for 3 levels');
   await page.goBack();
+  await page.waitForFunction(() => document.querySelector('.home') && !document.querySelector('.sheet') && !document.documentElement.classList.contains('busy'));
+
+  // ---------- 8f. sheets, status bar, calendar ----------
+  const statusBar = () => page.evaluate(() => document.querySelector('meta[name="theme-color"][media*="light"]').getAttribute('content'));
+  await page.locator('.list-card .btn', { hasText: 'Listen & Wörter' }).click();
+  await page.waitForSelector('.sheet .list-rows');
+  assert.ok(await page.locator('.app.recede').count(), 'the start screen recedes behind the sheet');
+  assert.equal(await statusBar(), '#999996', 'status bar dimmed with the sheet');
+  await page.goBack();
+  await page.waitForFunction(() => !document.querySelector('.sheet'));
+  assert.equal(await statusBar(), '#FAF9F5', 'status bar back to normal');
+  await page.locator('.streak').click();
+  await page.waitForSelector('.cal .cal-cell.today.lit');
+  await page.waitForTimeout(600);
+  await shot(page, '30-calendar');
+  assert.ok((await page.locator('.cal-stats').textContent()).includes('1 Tag'));
+  assert.ok(await page.locator('.cal-nav .icon-btn').first().isDisabled(), 'no months before the first game');
+  await page.goBack();
+  await page.waitForFunction(() => !document.querySelector('.cal'));
+
+  // ---------- 8g. "Üben" from a mistake: Fehlertraining starts with that word, at most 10 words ----------
+  await setState(() => {
+    const k = 'vokabeltrainer.v1';
+    const s = JSON.parse(localStorage.getItem(k));
+    const list = s.lists[s.currentListId];
+    s.stats[s.currentListId] = {};
+    list.words.slice(0, 14).forEach((w) => { s.stats[s.currentListId][w.id] = { w: 1, r: 0 }; });
+    localStorage.setItem(k, JSON.stringify(s));
+  });
+  await page.reload();
   await page.waitForSelector('.home');
+  await page.locator('.level-card.level-easy').click();
+  await page.waitForSelector('main.board .tile');
+  const failTile = page.locator('main.board .tile[data-side=en]').first();
+  const failedWord = byEn.get((await failTile.textContent()).trim());
+  await failTile.click();
+  for (const d of await page.locator('main.board .tile[data-side=de]').elementHandles()) {
+    if (!isDe(failedWord, (await d.textContent()).trim())) { await d.click(); break; }
+  }
+  await page.waitForSelector('.modal-fail');
+  await page.waitForTimeout(500);
+  await shot(page, '31-fail-practice');
+  await page.locator('.modal .btn', { hasText: 'Diese Wörter üben' }).click();
+  await page.waitForFunction(() => window.__vtGame && window.__vtGame.mode === 'training' && window.__vtGame.tCur);
+  assert.equal(await roundText(), 'Noch 10 Wörter', 'one session has at most 10 words');
+  const firstTrained = await page.evaluate(() => window.__vtGame.tCur.w.id);
+  assert.ok(firstTrained === failedWord.id || (await page.evaluate((id) => window.__vtGame.tQueue[0].w.id === id || window.__vtGame.tCur.w.id === id, failedWord.id)), 'the failed words come first');
+  await page.locator('.game-top .icon-btn').click();
+  await page.locator('.modal .btn', { hasText: 'Beenden' }).click();
+  await page.waitForSelector('.home');
+
+  // ---------- 8h. a missed day breaks the streak (once, with the animation) ----------
+  await setState(() => {
+    const k = 'vokabeltrainer.v1';
+    const s = JSON.parse(localStorage.getItem(k));
+    const key = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+    s.days = [key(4), key(3), key(2)];
+    s.streak = { best: 3, shown: 3, brokeOn: null };
+    localStorage.setItem(k, JSON.stringify(s));
+  });
+  await page.reload();
+  await page.waitForSelector('.streak-hint.lost');
+  await page.waitForFunction(() => document.querySelector('.streak .streak-num').textContent === '0' && document.querySelector('.streak-chip .roll').textContent === '0');
+  assert.ok(await page.locator('.week .day.missed').count() <= 1, 'the missed day is crossed out (if it is in this week)');
+  assert.ok((await page.locator('.streak-hint').textContent()).includes('Rekord bleibt 3'));
+  await shot(page, '32-streak-lost');
+
+  // ---------- 8i. "Fortschritt zurücksetzen": Endlos stays open (for every list) ----------
+  await page.locator('.home-top .icon-btn').click();
+  await page.waitForSelector('.sheet .timing');
+  await page.locator('.btn', { hasText: 'Fortschritt zurücksetzen' }).click();
+  await page.locator('.modal .btn', { hasText: 'Zurücksetzen' }).click();
+  await page.goBack();
+  await page.waitForFunction(() => !document.querySelector('.sheet'));
+  assert.ok(await page.locator('.level-card.level-medium').isDisabled(), 'levels are locked again');
+  assert.ok(!(await page.locator('.mode-card.mode-endless').isDisabled()), 'Endlos stays open');
+  assert.equal(await page.locator('.streak-chip .roll').textContent(), '0', 'Tagesserie starts again');
 
   // ---------- 8. Android back button during a game asks before quitting ----------
   await page.goBack();
-  await page.waitForSelector('.home');
+  await page.waitForFunction(() => document.querySelector('.home') && !document.querySelector('.sheet') && !document.documentElement.classList.contains('busy'));
   await page.locator('.level-card.level-easy').click();
   await page.waitForSelector('.tile');
   await page.goBack();

@@ -1,6 +1,9 @@
 // Everything is saved in this browser (localStorage). No server.
 import { BUILTIN_LISTS, RETIRED_BUILTINS } from './builtin-lists.js';
-import { parseWordList, LEVELS, LEVEL_IDS, createFixedRounds, fixedRoundsValid } from './core.js';
+import {
+  parseWordList, LEVELS, LEVEL_IDS, createFixedRounds, fixedRoundsValid, dayKey, streakInfo, bestStreak, missedDay, STREAK_MILESTONES,
+  trainingSession as trainingSessionOf,
+} from './core.js';
 
 const KEY = 'vokabeltrainer.v1';
 
@@ -14,6 +17,12 @@ function defaults() {
     progress: {},
     fixed: {},
     stats: {},
+    // Tagesserie: every day with a finished game (local "YYYY-MM-DD"); shown = the number last shown on the start screen
+    days: [],
+    streak: { best: 0, shown: 0, brokeOn: null },
+    // Endlos opens for every list as soon as "Mittel" was passed in any list – and stays open
+    // (also after "Fortschritt zurücksetzen" or deleting the list)
+    unlocks: { endless: false },
     settings: { lang: null, sound: true, vibrate: true, timing: {}, iosHintDismissed: false },
   };
 }
@@ -25,7 +34,10 @@ function sanitize(s) {
   if (!s || typeof s !== 'object' || s.v !== 1) return d;
   const out = { ...d, ...s };
   out.settings = { ...d.settings, ...(s.settings || {}) };
-  for (const k of ['lists', 'progress', 'fixed', 'stats']) if (!out[k] || typeof out[k] !== 'object') out[k] = {};
+  for (const k of ['lists', 'progress', 'fixed', 'stats', 'unlocks']) if (!out[k] || typeof out[k] !== 'object') out[k] = {};
+  out.unlocks = { endless: out.unlocks.endless === true };
+  out.days = Array.isArray(out.days) ? [...new Set(out.days.filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)))].sort() : [];
+  out.streak = { ...d.streak, ...(out.streak && typeof out.streak === 'object' ? out.streak : {}) };
   if (!Array.isArray(out.order)) out.order = [];
   if (!Array.isArray(out.removedBuiltins)) out.removedBuiltins = [];
   out.order = out.order.filter((id) => out.lists[id]);
@@ -135,17 +147,22 @@ export function isUnlocked(listId, level) {
   return levelProgress(listId, LEVEL_IDS[i - 1]).completed;
 }
 
-/** Returns { newRecord, unlocked } */
+/** Returns { newRecord, unlocked, endless } (endless: Endlos was opened just now) */
 export function recordResult(listId, level, { completed, timeLeft, round }) {
   const p = (state.progress[listId] = state.progress[listId] || {});
   const cur = levelProgress(listId, level);
   const next = { ...cur, plays: (cur.plays || 0) + 1, bestRound: Math.max(cur.bestRound || 0, round) };
   let newRecord = false;
   let unlocked = null;
+  let endless = false;
   if (completed) {
     if (!cur.completed) {
       const i = LEVEL_IDS.indexOf(level);
       if (i < LEVEL_IDS.length - 1) unlocked = LEVEL_IDS[i + 1];
+    }
+    if (level === 'medium' && !state.unlocks.endless) {
+      state.unlocks.endless = true;
+      endless = true;
     }
     if (cur.bestTimeLeft == null || timeLeft > cur.bestTimeLeft) {
       newRecord = cur.bestTimeLeft != null;
@@ -155,13 +172,17 @@ export function recordResult(listId, level, { completed, timeLeft, round }) {
   }
   p[level] = next;
   save();
-  return { newRecord, unlocked };
+  return { newRecord, unlocked, endless };
 }
 
+/** Levels, records, mistakes and the Tagesserie start again; Endlos stays open where it was open. */
 export function resetProgress() {
   state.progress = {};
   state.fixed = {};
   state.stats = {};
+  state.days = [];
+  state.streak = { best: 0, shown: 0, brokeOn: null };
+  pendingStreakAnim = null;
   save();
 }
 
@@ -186,8 +207,14 @@ export function renewFixedRounds(listId, level, words) {
 
 // ---------- Endlos ----------
 
-export function endlessUnlocked(listId) {
-  return levelProgress(listId, 'hard').completed;
+/** Endlos: open for all lists once "Mittel" was passed in any list; it never closes again. */
+export function endlessUnlocked() {
+  if (state.unlocks.endless) return true;
+  const passed = Object.keys(state.progress).some((id) => levelProgress(id, 'medium').completed);
+  if (!passed) return false;
+  state.unlocks.endless = true;
+  save();
+  return true;
 }
 
 export function endlessProgress(listId) {
@@ -265,4 +292,66 @@ export function setTiming(level, key, value) {
 export function resetTiming() {
   state.settings.timing = {};
   save();
+}
+
+// ---------- Tagesserie ----------
+
+let pendingStreakAnim = null;
+
+/** Current streak, record and played days. */
+export function streak(today = dayKey()) {
+  const info = streakInfo(state.days, today);
+  return { ...info, today, best: Math.max(state.streak.best || 0, bestStreak(state.days), info.n), days: new Set(state.days) };
+}
+
+/**
+ * A game was played to the end (won or lost; not "Beenden"): the first one of the day adds the day.
+ * Returns { plus, n, milestone }; the +1 animation runs when the start screen is shown again.
+ */
+export function countToday(today = dayKey()) {
+  if (state.days.includes(today)) return { plus: false, n: streak(today).n, milestone: false };
+  const bestBefore = streak(today).best;
+  state.days.push(today);
+  state.days.sort();
+  const now = streak(today);
+  state.streak.best = Math.max(state.streak.best || 0, now.n);
+  pendingStreakAnim = { from: now.n - 1, to: now.n, milestone: STREAK_MILESTONES.includes(now.n), bestBefore };
+  save();
+  return { plus: true, n: now.n, milestone: pendingStreakAnim.milestone };
+}
+
+/** The +1 that still has to be shown on the start screen (only once). */
+export function takeStreakAnim() {
+  const a = pendingStreakAnim;
+  pendingStreakAnim = null;
+  return a;
+}
+
+export function peekStreakAnim() {
+  return pendingStreakAnim;
+}
+
+/**
+ * Called when the start screen is shown: did the streak break since it was last shown?
+ * Returns the number to animate down from (or 0) and remembers the new number.
+ */
+export function streakBreak(today = dayKey()) {
+  const now = streak(today);
+  const shown = state.streak.shown || 0;
+  const from = shown > 0 && now.n === 0 ? shown : 0;
+  if (from) state.streak.brokeOn = today;
+  if (shown !== now.n || from) {
+    state.streak.shown = now.n;
+    save();
+  }
+  return { from, missed: missedDay(state.days, today), brokeToday: state.streak.brokeOn === today };
+}
+
+export function setStreakShown(n) {
+  if (state.streak.shown !== n) { state.streak.shown = n; save(); }
+}
+
+/** Fehlertraining: the words of one session (at most 10, the given ones first). */
+export function trainingWords(listId, words, focusIds = []) {
+  return trainingSessionOf(mistakeWords(listId, words), focusIds);
 }

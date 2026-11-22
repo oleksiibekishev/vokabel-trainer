@@ -1,28 +1,216 @@
 import * as store from './store.js';
 import { t, tList, tSplit, setLang, detectLang, LANGS, getLang } from './i18n.js';
-import { h, icon, logo, levelBars, toast, modal, confirmDialog, sfx } from './ui.js';
+import { h, icon, logo, levelBars, toast, modal, confirmDialog, sfx, dimStatusBar, closeAllModals } from './ui.js';
 import {
   LEVELS, LEVEL_IDS, MIN_WORDS, parseWordList, encodeData, decodeData, listToShare, listFromShare, listIdFor,
 } from './core.js';
 import { Game } from './game.js';
+import * as streakUI from './streak.js';
 
-export const APP_VERSION = '1.6.1';
+export const APP_VERSION = '1.7.0';
 
 const app = document.getElementById('app');
 let game = null;
 let deferredInstall = null;
 let updateWaiting = false;
 
-// ---------- navigation (Android back button goes one screen back) ----------
+// ---------- screens and transitions ----------
+// #app shows the start screen or a game. Lists, the new-list form and the settings open as
+// sheets from the bottom over the (receding, dimmed) start screen. A game fades in and out.
 
+const SHEETS = { lists: () => renderLists(), addList: () => renderAddList(), settings: () => renderSettings() };
+const sheets = []; // open sheets, bottom to top: { name, layer, dim, under }
+let base = 'home'; // 'home' | 'game'
+let homeScroll = 0;
+let homeView = null; // { view, card, chip } – streak animations play once the start screen is visible
+let levelsBefore = null; // level states before a game, to animate what changed
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const reduced = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const ms = (x) => (reduced() ? 0 : x);
+function busy(on) { document.documentElement.classList.toggle('busy', on); }
+
+/** The elements of a screen come in one after another. */
+function cascade(el, cls, step = 40) {
+  [...el.children].forEach((c, i) => c.style.setProperty('--i', Math.min(i, 10)));
+  el.classList.add(cls, 'tr-build');
+  const n = Math.min(el.children.length, 10);
+  setTimeout(() => el.classList.remove(cls, 'tr-build'), 120 + n * step + 320);
+  return 120 + n * step + 120;
+}
+
+// transitions run one after another
+let queue = Promise.resolve();
 function show(name, arg) {
-  if (game) { game.destroy(); game = null; }
-  document.querySelectorAll('.modal-wrap').forEach((m) => m.remove());
-  if (name === 'game') return showGame(arg);
-  const screens = { home: renderHome, lists: renderLists, addList: renderAddList, settings: renderSettings };
-  app.replaceChildren((screens[name] || renderHome)(arg));
+  queue = queue.then(() => doShow(name, arg)).catch((e) => { console.error(e); busy(false); });
+  return queue;
+}
+
+async function doShow(name, arg) {
+  closeAllModals();
+  if (name === 'home' && streakUI.calendarIsOpen()) { await streakUI.closeCalendar(); return; }
+  if (name === 'game') { await startGame(arg); return; }
+  if (SHEETS[name]) {
+    const idx = sheets.findIndex((x) => x.name === name);
+    if (idx >= 0 && idx === sheets.length - 1) { refreshSheet(sheets[idx]); return; }
+    if (idx >= 0) { refreshSheet(sheets[idx]); await closeSheets(idx + 1); return; }
+    if (base === 'game') { if (game) { game.destroy(); game = null; } base = 'home'; refreshHome(); }
+    await openSheet(name);
+    return;
+  }
+  // start screen
+  if (sheets.length) { refreshHome(); await closeSheets(0); return; }
+  if (base === 'game') { await returnToMenu(); return; }
+  refreshHome();
+  setTimeout(applyUpdateIfIdle, 300);
+}
+
+function refreshHome() {
+  const y = window.scrollY;
+  app.replaceChildren(renderHome());
+  window.scrollTo(0, y);
+}
+
+function refreshSheet(sh) {
+  sh.layer.firstElementChild.replaceChildren(SHEETS[sh.name]());
+}
+
+async function openSheet(name) {
+  const under = sheets.length ? sheets[sheets.length - 1].layer : app;
+  if (under === app) app.style.setProperty('--sy', window.scrollY + 'px');
+  const dim = h('div', { class: 'sheet-dim in' });
+  const layer = h('div', { class: 'sheet sheet-in', role: 'dialog', 'aria-modal': 'true' }, h('div', { class: 'sheet-inner' }, SHEETS[name]()));
+  const title = layer.querySelector('h1');
+  if (title) layer.setAttribute('aria-label', title.textContent);
+  under.classList.remove('return');
+  under.classList.add('recede');
+  document.body.append(dim, layer);
+  document.documentElement.classList.add('locked');
+  dimStatusBar('sheet-' + name, true);
+  sheets.push({ name, layer, dim, under });
+  busy(true);
+  await wait(ms(420));
+  busy(false);
+  layer.classList.remove('sheet-in');
+}
+
+async function closeSheets(keep) {
+  while (sheets.length > keep) {
+    const sh = sheets.pop();
+    sh.dim.classList.remove('in');
+    sh.dim.classList.add('out');
+    sh.under.classList.remove('recede');
+    sh.under.classList.add('return');
+    sh.layer.classList.add('sheet-out');
+    dimStatusBar('sheet-' + sh.name, false);
+    busy(true);
+    await wait(ms(320));
+    busy(false);
+    sh.layer.remove();
+    sh.dim.remove();
+    sh.under.classList.remove('return');
+  }
+  if (!sheets.length) {
+    document.documentElement.classList.remove('locked');
+    if (base === 'home') {
+      playHomeAnims();
+      setTimeout(applyUpdateIfIdle, 300);
+    }
+  }
+}
+
+function levelStates(list) {
+  if (!list) return null;
+  const st = {};
+  for (const lvl of LEVEL_IDS) st[lvl] = !store.isUnlocked(list.id, lvl) ? 'locked' : store.levelProgress(list.id, lvl).completed ? 'done' : 'open';
+  st.endless = store.endlessUnlocked() ? 'open' : 'locked';
+  return st;
+}
+
+/** Start a game: the start screen fades out, the game fades in, its parts one after another. */
+async function startGame({ level, focus = [], fromGame = false } = {}) {
+  const list = store.currentList();
+  const allowed = list && list.words.length >= MIN_WORDS && (
+    level === 'endless' ? store.endlessUnlocked()
+      : level === 'training' ? store.mistakeWords(list.id, list.words).length > 0
+        : LEVEL_IDS.includes(level) && store.isUnlocked(list.id, level));
+  if (!allowed) { await doShow('home'); return; }
+  busy(true);
+  if (sheets.length) {
+    sheets.splice(0).forEach((sh) => { sh.layer.remove(); sh.dim.remove(); dimStatusBar('sheet-' + sh.name, false); });
+    document.documentElement.classList.remove('locked');
+    app.classList.remove('recede', 'return');
+  }
+  if (base === 'home') {
+    homeScroll = window.scrollY;
+    levelsBefore = levelStates(list);
+    const old = app.firstElementChild;
+    if (old && !reduced()) { old.classList.add('tr-c-out'); await wait(150); }
+  }
+  if (game) game.destroy();
+  base = 'game';
+  const root = h('div', { class: 'screen game' });
+  app.replaceChildren(root);
   window.scrollTo(0, 0);
-  if (name === 'home') setTimeout(applyUpdateIfIdle, 300);
+  game = new Game({
+    root, list, level, focus,
+    onMenu: () => { game = null; goBack(); },
+    onNextLevel: (lvl) => show('game', { level: lvl, fromGame: true }),
+    onTrain: (ids) => show('game', { level: 'training', focus: ids, fromGame: true }),
+  });
+  game.start();
+  if (!reduced()) {
+    if (fromGame) {
+      root.classList.add('tr-show');
+      setTimeout(() => root.classList.remove('tr-show'), 300);
+    } else {
+      game.holdFor(cascade(root, 'tr-c-in'));
+    }
+  }
+  busy(false);
+}
+
+/** Back from a game: it fades out, the start screen comes back where it was, then the news is shown. */
+async function returnToMenu() {
+  if (game) { game.destroy(); game = null; }
+  busy(true);
+  const old = app.firstElementChild;
+  if (old && !reduced()) { old.classList.add('tr-c-out-back'); await wait(150); }
+  base = 'home';
+  app.replaceChildren(renderHome());
+  window.scrollTo(0, homeScroll);
+  const home = app.firstElementChild;
+  if (!reduced()) await wait(cascade(home, 'tr-c-in-back'));
+  busy(false);
+  await playHomeAnims();
+  setTimeout(applyUpdateIfIdle, 300);
+}
+
+/** After a game: a passed level, a new level, the Tagesserie +1 (or a broken streak). */
+async function playHomeAnims() {
+  const hv = homeView;
+  if (!hv || !hv.home.isConnected) return;
+  const before = levelsBefore;
+  levelsBefore = null;
+  const now = levelStates(store.currentList());
+  if (before && now) {
+    let changed = false;
+    for (const k of Object.keys(now)) {
+      if (now[k] === before[k]) continue;
+      const card = hv.home.querySelector(k === 'endless' ? '.mode-card.mode-endless' : '.level-card.level-' + k);
+      if (!card) continue;
+      changed = true;
+      if (before[k] === 'locked') {
+        card.classList.add('unlock-anim');
+        const pill = card.querySelector('.play-pill');
+        if (pill) pill.classList.add('pop-anim');
+      }
+      const status = card.querySelector('.level-status, .mode-status');
+      if (status) status.classList.add('swap');
+    }
+    if (changed) await wait(ms(260));
+  }
+  if (hv.view.anim) await streakUI.playStreakAnim(hv.view, hv.card, hv.chip);
 }
 
 function navigate(name, arg) {
@@ -32,6 +220,7 @@ function navigate(name, arg) {
 
 function goBack() {
   if (history.state && history.state.screen && history.state.screen !== 'home') history.back();
+  else if (history.state && history.state.cal) history.back();
   else show('home');
 }
 
@@ -42,6 +231,7 @@ window.addEventListener('popstate', () => {
     return;
   }
   const screen = (history.state && history.state.screen) || 'home';
+  if (streakUI.calendarIsOpen() && !(history.state && history.state.cal)) { streakUI.closeCalendar(); return; }
   if (screen === 'game') {
     history.replaceState({ screen: 'home' }, '');
     show('home');
@@ -50,9 +240,15 @@ window.addEventListener('popstate', () => {
   show(screen);
 });
 
+function openCalendar(card) {
+  if (!card || streakUI.calendarIsOpen() || document.documentElement.classList.contains('busy')) return;
+  history.pushState({ screen: 'home', cal: true }, '');
+  streakUI.openCalendar(card, { setBusy: busy, onRequestClose: () => history.back() });
+}
+
 function topbar(title) {
   return h('header', { class: 'topbar' },
-    h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('back'), onclick: goBack }, icon('back')),
+    h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('back'), onclick: goBack }, icon('chevronDown')),
     h('h1', { class: 'topbar-title' }, title));
 }
 
@@ -61,13 +257,21 @@ function topbar(title) {
 function renderHome() {
   const list = store.currentList();
   const wrap = h('div', { class: 'screen home' });
-  wrap.appendChild(h('header', { class: 'topbar home-top' },
+  const view = streakUI.streakView();
+  const open = () => openCalendar(homeView && homeView.card);
+  const chip = streakUI.streakChip(view, open);
+  const head = h('header', { class: 'topbar home-top' },
     logo(),
     h('div', { class: 'brand' }, h('h1', null, t('appName')), h('p', null, t('tagline'))),
-    h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('settings'), onclick: () => navigate('settings') }, icon('gear'))));
+    chip,
+    h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('settings'), onclick: () => navigate('settings') }, icon('gear')));
+  wrap.appendChild(head);
+  const card = streakUI.streakCard(view, open);
+  homeView = { view, card, chip, home: wrap };
 
   const banner = installBanner();
   if (banner) wrap.appendChild(banner);
+  wrap.appendChild(card);
 
   if (!list) {
     wrap.appendChild(h('div', { class: 'empty-card' },
@@ -102,14 +306,14 @@ function renderHome() {
 
 /** Endlos and Fehlertraining below the levels. */
 function modesSection(list, enough) {
-  const endlessOpen = store.endlessUnlocked(list.id);
+  const endlessOpen = store.endlessUnlocked();
   const ep = store.endlessProgress(list.id);
   const mistakes = store.mistakeWords(list.id, list.words).length;
   const card = ({ id, playable, desc, status, statusCls, play, badge }) => h('button', {
     class: 'mode-card mode-' + id + (playable ? '' : ' locked'),
     type: 'button',
     disabled: !playable,
-    onclick: () => { sfx.unlock(); navigate('game', id); },
+    onclick: () => { sfx.unlock(); navigate('game', { level: id }); },
   },
   h('span', { class: 'mode-head' },
     h('span', { class: 'mode-icon-tile', 'aria-hidden': 'true' }, icon(id), badge ? h('span', { class: 'mode-badge' }, badge) : null),
@@ -180,7 +384,7 @@ function levelCard(list, level, enough) {
     class: 'level-card level-' + level + (playable ? '' : ' locked'),
     type: 'button',
     disabled: !playable,
-    onclick: () => { sfx.unlock(); navigate('game', level); },
+    onclick: () => { sfx.unlock(); navigate('game', { level }); },
   },
   h('span', { class: 'level-head' },
     levelBars(level),
@@ -226,27 +430,6 @@ function installBanner() {
       }, icon('close')));
   }
   return null;
-}
-
-// ---------- game ----------
-
-function showGame(level) {
-  if (game) game.destroy();
-  const list = store.currentList();
-  const allowed = list && list.words.length >= MIN_WORDS && (
-    level === 'endless' ? store.endlessUnlocked(list.id)
-      : level === 'training' ? store.mistakeWords(list.id, list.words).length > 0
-        : LEVEL_IDS.includes(level) && store.isUnlocked(list.id, level));
-  if (!allowed) { show('home'); return; }
-  const root = h('div', { class: 'screen game' });
-  app.replaceChildren(root);
-  window.scrollTo(0, 0);
-  game = new Game({
-    root, list, level,
-    onMenu: () => { game = null; goBack(); },
-    onNextLevel: (lvl) => showGame(lvl),
-  });
-  game.start();
 }
 
 // ---------- lists & words ----------
@@ -536,7 +719,7 @@ function registerSW() {
 
 /** A new version is installed: reload quietly as soon as we are on the start screen (never during a game). */
 function applyUpdateIfIdle() {
-  if (!updateWaiting || game || document.querySelector('.modal-wrap') || !document.querySelector('.home')) return;
+  if (!updateWaiting || game || base !== 'home' || sheets.length || streakUI.calendarIsOpen() || document.querySelector('.modal-wrap')) return;
   updateWaiting = false;
   location.reload();
 }
@@ -544,15 +727,20 @@ function applyUpdateIfIdle() {
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredInstall = e;
-  if (!game && document.querySelector('.home')) show('home');
+  if (!game && base === 'home' && !sheets.length) show('home');
 });
 
 function boot() {
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+  // a thin line under the sticky header once the start screen is scrolled
+  window.addEventListener('scroll', () => {
+    const head = base === 'home' ? document.querySelector('.home-top') : null;
+    if (head) head.classList.toggle('scrolled', window.scrollY > 4);
+  }, { passive: true });
   store.load();
   setLang(store.settings().lang || detectLang());
   history.replaceState({ screen: 'home' }, '', location.href);
-  show('home');
+  show('home').then(() => playHomeAnims());
   handleImportLink();
   registerSW();
 }

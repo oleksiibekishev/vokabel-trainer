@@ -101,17 +101,23 @@ export function wirbelOrder(pairs, mixed, rnd = Math.random) {
 
 /**
  * Special round for round number `round` (1-based) or null.
- * Never in rounds 1–3, never twice in a row, at most cfg.modMax per game,
- * only modifiers that work with this game type.
+ * Never in rounds 1–3, never twice in a row, at most cfg.modMax per game.
+ * Every allowed special round has the same chance; the game of the round is fitted to it
+ * afterwards (fitTypeToMod), so Zeitraffer does not win just because it fits every game.
  */
 export function rollModifier(cfg, round, type, prevMod, count, rnd = Math.random) {
   if (!cfg.mods || round < MOD_FIRST_ROUND || prevMod || count >= cfg.modMax) return null;
   const grow = cfg.modChanceGrow || 0;
   const chance = Math.min(cfg.modChanceMax || 1, (cfg.modChance ?? MOD_CHANCE) + grow * (round - MOD_FIRST_ROUND));
   if (rnd() >= chance) return null;
-  const options = cfg.mods.filter((m) => MOD_TYPES[m].includes(type));
-  if (!options.length) return null;
-  return options[Math.floor(rnd() * options.length)];
+  return cfg.mods[Math.floor(rnd() * cfg.mods.length)];
+}
+
+/** The game for a special round: the planned one if it fits, else one that does (Wirbel → Paare, Kombo → Paare/Auswahl). */
+export function fitTypeToMod(mod, type, rnd = Math.random) {
+  if (!mod || MOD_TYPES[mod].includes(type)) return type;
+  const ok = MOD_TYPES[mod];
+  return ok[Math.floor(rnd() * ok.length)];
 }
 
 /**
@@ -141,6 +147,14 @@ export function placeNewPairs(freed, words, mixed, rnd = Math.random) {
 // ---------- Fehlertraining ----------
 
 export const TRAINING_STEPS = ['choice', 'gaps', 'spell'];
+export const TRAINING_MAX = 10;
+
+/** Words for one Fehlertraining: the given words first (e.g. the one just failed), then the hardest ones – at most TRAINING_MAX. */
+export function trainingSession(mistakeWords, focusIds = [], max = TRAINING_MAX) {
+  const focus = focusIds.map((id) => mistakeWords.find((w) => w.id === id)).filter(Boolean);
+  const rest = mistakeWords.filter((w) => !focus.includes(w));
+  return [...focus, ...rest].slice(0, max);
+}
 
 /** The three games for one word; words too short for the gaps game get a second choice question. */
 export function trainingTypes(w) {
@@ -529,6 +543,122 @@ export function fixedRoundsValid(levelId, fixed, words) {
     if (r.type === 'pairs' && r.ids.length < want) return false;
     return true;
   });
+}
+
+// ---------- Tagesserie (days in a row) ----------
+
+export const STREAK_MILESTONES = [7, 14, 30, 50, 100];
+
+/** "2026-11-22" for a date in local time. */
+export function dayKey(d = new Date()) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+export function addDays(key, n) {
+  const [y, m, d] = key.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + n));
+  return t.toISOString().slice(0, 10);
+}
+
+/** Monday = 0 … Sunday = 6 */
+export function weekday(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  return (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7;
+}
+
+/**
+ * Current streak: days in a row up to today – or up to yesterday while today is still open.
+ * Returns { n, doneToday, run: Set of the days of the streak }.
+ */
+export function streakInfo(days, today) {
+  const set = days instanceof Set ? days : new Set(days);
+  const doneToday = set.has(today);
+  const run = new Set();
+  let d = doneToday ? today : addDays(today, -1);
+  while (set.has(d)) { run.add(d); d = addDays(d, -1); }
+  return { n: run.size, doneToday, run };
+}
+
+/** Longest run of days in a row. */
+export function bestStreak(days) {
+  const sorted = [...new Set(days)].sort();
+  let best = 0;
+  let cur = 0;
+  let prev = null;
+  for (const d of sorted) {
+    cur = prev && addDays(prev, 1) === d ? cur + 1 : 1;
+    best = Math.max(best, cur);
+    prev = d;
+  }
+  return best;
+}
+
+/** The day that broke the last streak (the first day without a game after the last played day before today). */
+export function missedDay(days, today) {
+  const before = [...days].filter((d) => d < today).sort();
+  if (!before.length) return null;
+  const m = addDays(before[before.length - 1], 1);
+  return m < today ? m : null;
+}
+
+/**
+ * Mo–So of the current week for the streak tile.
+ * code: 'today-done' | 'today-open' | 'future' | 'done' | 'missed' | 'empty'; old = played, but not part of the current streak;
+ * link: joined to the day before (a chain); wait = the link to today grows when today is played.
+ */
+export function weekView(days, today, missed = null, runEnd = null) {
+  const set = days instanceof Set ? days : new Set(days);
+  // runEnd: show the streak that ended on this day as still running (start of the "streak broken" animation)
+  const { run } = runEnd ? streakInfo(set, addDays(runEnd, 1)) : streakInfo(set, today);
+  const monday = addDays(today, -weekday(today));
+  const out = [];
+  for (let i = 0; i < 7; i++) {
+    const key = addDays(monday, i);
+    const played = set.has(key);
+    let code;
+    if (key === today) code = played ? 'today-done' : 'today-open';
+    else if (key > today) code = 'future';
+    else if (played) code = 'done';
+    else code = key === missed ? 'missed' : 'empty';
+    const lit = code === 'done' || code === 'today-done';
+    const old = code === 'done' && !run.has(key);
+    const prev = out[i - 1];
+    const prevLit = prev && (prev.code === 'done' || prev.code === 'today-done') && !prev.old;
+    const link = !!prevLit && ((lit && !old) || code === 'today-open');
+    out.push({ key, i, code, old, link, wait: link && code === 'today-open' });
+  }
+  return out;
+}
+
+/** Month grid for the calendar: always 6 rows × 7 days (Monday first); empty cells are null. */
+export function monthGrid(days, ym, today) {
+  const set = days instanceof Set ? days : new Set(days);
+  const [y, m] = ym.split('-').map(Number);
+  const count = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const off = weekday(ym + '-01');
+  const rows = [];
+  for (let r = 0; r < 6; r++) {
+    const row = [];
+    for (let c = 0; c < 7; c++) {
+      const dn = r * 7 + c - off + 1;
+      if (dn < 1 || dn > count) { row.push(null); continue; }
+      const key = ym + '-' + String(dn).padStart(2, '0');
+      const lit = set.has(key);
+      row.push({
+        key, day: dn, lit, today: key === today, future: key > today,
+        joinLeft: lit && c > 0 && dn > 1 && set.has(addDays(key, -1)),
+        joinRight: lit && c < 6 && dn < count && set.has(addDays(key, 1)),
+      });
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+export function shiftMonth(ym, n) {
+  const [y, m] = ym.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1 + n, 1));
+  return t.toISOString().slice(0, 7);
 }
 
 // ---------- sharing lists / backup codes ----------

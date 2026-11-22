@@ -5,7 +5,8 @@ import {
   parseWordList, checkAnswer, answerVariants, displayForms, diffWords, closestForm, makeGaps,
   pickWords, pickDistractors, buildTypePlan, createFixedRounds, fixedRoundsValid, LEVELS,
   encodeData, decodeData, listToShare, listFromShare, primaryForm, answerDiff, variants, allVariants, gapTargets,
-  ENDLESS, MOD_TYPES, stepValue, applyBonus, komboNext, rollModifier, placeNewPairs, wirbelOrder, trainingTypes, trainingPick,
+  ENDLESS, MOD_TYPES, stepValue, applyBonus, komboNext, rollModifier, fitTypeToMod, placeNewPairs, wirbelOrder, trainingTypes, trainingPick,
+  trainingSession, TRAINING_MAX, streakInfo, bestStreak, missedDay, weekView, monthGrid, addDays, weekday, shiftMonth,
 } from '../js/core.js';
 import { BUILTIN_LISTS } from '../js/builtin-lists.js';
 
@@ -223,20 +224,20 @@ test('Kombo: ×2 +5 s, ×3 +10 s, ×4 +15 s, ×5 +20 s; slow answers go back to 
   assert.equal(run([false, false]).total, 0);
 });
 
-test('special rounds: from round 4, never twice in a row, limited per game, only fitting games', () => {
+test('special rounds: from round 4, never twice in a row, limited per game, the game fits the special round', () => {
   for (const lvl of ['easy', 'medium', 'hard']) {
     const cfg = LEVELS[lvl];
     for (let g = 0; g < 2000; g++) {
       let prev = null;
       let count = 0;
       for (let round = 1; round <= cfg.rounds; round++) {
-        const type = round <= 3 ? cfg.fixed[round - 1] : cfg.pool[Math.floor(Math.random() * cfg.pool.length)];
-        const m = rollModifier(cfg, round, type, prev, count);
+        const planned = round <= 3 ? cfg.fixed[round - 1] : cfg.pool[Math.floor(Math.random() * cfg.pool.length)];
+        const m = rollModifier(cfg, round, planned, prev, count);
         if (round <= 3) assert.equal(m, null);
         if (m) {
           assert.equal(prev, null, 'never two special rounds in a row');
-          assert.ok(MOD_TYPES[m].includes(type), m + ' fits ' + type);
           assert.ok(cfg.mods.includes(m));
+          assert.ok(MOD_TYPES[m].includes(fitTypeToMod(m, planned)), m + ' gets a game that fits');
           count++;
         }
         prev = m;
@@ -245,8 +246,15 @@ test('special rounds: from round 4, never twice in a row, limited per game, only
     }
   }
   assert.ok(!LEVELS.easy.mods.includes('zeitraffer'), 'no Zeitraffer in Leicht');
-  assert.equal(rollModifier(LEVELS.medium, 5, 'gaps', null, 0, () => 0), 'zeitraffer', 'gaps rounds can only be Zeitraffer');
+  assert.equal(fitTypeToMod('zeitraffer', 'gaps'), 'gaps', 'a fitting game stays');
+  assert.equal(fitTypeToMod('wirbel', 'spell'), 'pairs');
+  assert.ok(['pairs', 'choice'].includes(fitTypeToMod('kombo', 'gaps')));
   assert.equal(rollModifier(LEVELS.medium, 5, 'pairs', null, 0, () => 0.3), null, '25 % chance');
+  // every special round equally often (Zeitraffer used to come in ~75 % of the cases)
+  const seen = { wirbel: 0, kombo: 0, zeitraffer: 0 };
+  for (let i = 0; i < 30000; i++) { const m = rollModifier(LEVELS.hard, 6, 'spell', null, 0); if (m) seen[m]++; }
+  const total = seen.wirbel + seen.kombo + seen.zeitraffer;
+  for (const k of Object.keys(seen)) assert.ok(Math.abs(seen[k] / total - 1 / 3) < 0.03, k + ': ' + (seen[k] / total).toFixed(2));
   // Endlos: the chance grows up to 50 %
   assert.equal(rollModifier(ENDLESS, 4, 'pairs', null, 0, () => 0.3), null);
   assert.notEqual(rollModifier(ENDLESS, 30, 'pairs', null, 99, () => 0.45), null);
@@ -295,4 +303,43 @@ test('Fehlertraining: three games per word, the same word never twice in a row',
   assert.equal(trainingPick(q, 'a'), 1);
   assert.equal(trainingPick(q, 'b'), 0);
   assert.equal(trainingPick([{ w: { id: 'a' } }], 'a'), 0, 'only one word left');
+});
+
+test('Fehlertraining: at most 10 words, the word of the last mistake first', () => {
+  const ws = Array.from({ length: 15 }, (_, i) => ({ id: 'w' + i }));
+  assert.equal(TRAINING_MAX, 10);
+  assert.deepEqual(trainingSession(ws).map((w) => w.id), ws.slice(0, 10).map((w) => w.id));
+  assert.deepEqual(trainingSession(ws, ['w12', 'w3']).slice(0, 3).map((w) => w.id), ['w12', 'w3', 'w0']);
+  assert.equal(trainingSession(ws, ['w12']).length, 10);
+  assert.equal(trainingSession(ws.slice(0, 4)).length, 4);
+});
+
+test('Tagesserie: days in a row, record, week and month view', () => {
+  const today = '2026-11-22'; // a Sunday
+  assert.equal(weekday(today), 6);
+  assert.equal(addDays('2026-03-01', -1), '2026-02-28');
+  assert.equal(addDays('2026-12-31', 1), '2027-01-01');
+  assert.equal(shiftMonth('2026-01', -1), '2025-12');
+  const days = ['2026-11-16', '2026-11-17', '2026-11-19', '2026-11-20', '2026-11-21'];
+  let s = streakInfo(days, today);
+  assert.equal(s.n, 3, 'today still open: the streak up to yesterday counts');
+  assert.equal(s.doneToday, false);
+  s = streakInfo([...days, today], today);
+  assert.equal(s.n, 4);
+  assert.equal(streakInfo(['2026-11-19', '2026-11-20'], today).n, 0, 'yesterday missed: streak broken');
+  assert.equal(bestStreak(['2026-10-01', '2026-10-02', '2026-10-03', '2026-11-01']), 3);
+  assert.equal(missedDay(['2026-11-16', '2026-11-17'], today), '2026-11-18');
+  assert.equal(missedDay(['2026-11-21'], today), null, 'nothing missed yet');
+  const week = weekView(days, today);
+  assert.deepEqual(week.map((d) => d.code), ['done', 'done', 'empty', 'done', 'done', 'done', 'today-open']);
+  assert.deepEqual(week.map((d) => d.old), [true, true, false, false, false, false, false], 'Mo/Tu are no longer part of the streak');
+  assert.deepEqual(week.map((d) => d.link), [false, false, false, false, true, true, true]);
+  assert.equal(week[6].wait, true, 'the link to today grows when today is played');
+  const grid = monthGrid(days, '2026-11', today);
+  assert.equal(grid.length, 6, 'always 6 rows');
+  assert.equal(grid[0][6].day, 1, '1 November 2026 is a Sunday');
+  const d20 = grid.flat().find((c) => c && c.day === 20);
+  assert.ok(d20.lit && d20.joinLeft && d20.joinRight);
+  assert.ok(grid.flat().find((c) => c && c.day === 22).today);
+  assert.ok(grid.flat().find((c) => c && c.day === 23).future);
 });

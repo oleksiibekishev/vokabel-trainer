@@ -1,10 +1,10 @@
 import {
   LEVELS, LEVEL_IDS, ENDLESS, ROUND_SIZE, WIRBEL_EXTRA, KOMBO_MAX, MOD_TYPES, buildTypePlan, endlessTypes, pickWords, pickDistractors,
   makeGaps, checkAnswer, closestForm, answerDiff, shuffle, wordFilterFor, variants, pickVariant, allVariants, gapTargets, norm,
-  stepValue, applyBonus, komboNext, rollModifier, placeNewPairs, wirbelOrder, trainingTypes, trainingPick,
+  stepValue, applyBonus, komboNext, rollModifier, fitTypeToMod, placeNewPairs, wirbelOrder, trainingTypes, trainingPick,
 } from './core.js';
 import * as store from './store.js';
-import { t, tSplit } from './i18n.js';
+import { t, tSplit, tDays } from './i18n.js';
 import { h, icon, levelBars, modal, sfx } from './ui.js';
 
 const BONUS_PAUSE_MS = 900;
@@ -44,13 +44,15 @@ function replay(el, cls) {
  * 'endless' (rounds without end) or 'training' (Fehlertraining: words with mistakes, no timer).
  */
 export class Game {
-  constructor({ root, list, level, onMenu, onNextLevel }) {
+  constructor({ root, list, level, onMenu, onNextLevel, onTrain, focus = [] }) {
     this.root = root;
     this.list = list;
     this.level = level;
     this.mode = level === 'endless' || level === 'training' ? level : 'level';
     this.onMenu = onMenu;
     this.onNextLevel = onNextLevel;
+    this.onTrain = onTrain;
+    this.focus = focus;
     this.words = list.words;
     this.byId = new Map(this.words.map((w) => [w.id, w]));
     if (this.mode === 'endless') this.cfg = { ...ENDLESS };
@@ -83,6 +85,13 @@ export class Game {
   }
 
   hold(reason) { this.holds.add(reason); }
+
+  /** The time waits while the screen comes in. */
+  holdFor(ms) {
+    if (!ms) return;
+    this.hold('enter');
+    setTimeout(() => this.release('enter'), ms);
+  }
   release(reason) { this.holds.delete(reason); }
 
   later(ms, fn) {
@@ -166,7 +175,9 @@ export class Game {
     if (this.mode === 'training') {
       this.fixed = [];
       this.plan = [];
-      this.tQueue = store.mistakeWords(this.list.id, this.words).map((w) => ({ w, step: 0, types: trainingTypes(w) }));
+      // one session: at most 10 words, the word(s) of the last mistake first
+      this.tQueue = store.trainingWords(this.list.id, this.words, this.focus).map((w) => ({ w, step: 0, types: trainingTypes(w) }));
+      this.focus = [];
       this.tLearned = 0;
       this.tLast = null;
     } else if (this.mode === 'endless') {
@@ -288,7 +299,9 @@ export class Game {
     const opts = askQuit
       ? {
         title: t('quitTitle'),
-        body: h('p', { class: 'modal-text' }, t(this.mode === 'training' ? 'quitTextTraining' : 'quitText')),
+        body: h('div', { class: 'modal-body' },
+          h('p', { class: 'modal-text' }, t(this.mode === 'training' ? 'quitTextTraining' : 'quitText')),
+          store.streak().doneToday ? null : h('p', { class: 'st-note' }, icon('streak'), h('span', null, t('streakQuitNote')))),
         buttons: [{ label: t('quit'), value: 'quit', kind: 'danger' }, { label: t('resume'), value: 'resume', kind: 'outline', grow: true }],
       }
       : {
@@ -332,10 +345,12 @@ export class Game {
     if (this.mode === 'training') return;
     const dot = (i) => h('span', { class: this.dotClass(i) + (mark && i === this.roundIdx ? ' mark' : ''), 'data-type': this.plan[i] });
     if (this.mode === 'endless') {
+      // from the left; from round 7 on the row moves on and the oldest dot fades out
       const dots = [];
+      const scrolled = this.roundIdx >= 6;
       for (let i = Math.max(0, this.roundIdx - 5); i <= this.roundIdx; i++) dots.push(dot(i));
-      this.elDots.className = 'dots window';
-      this.elDots.replaceChildren(h('span', { class: 'dots-track' + (roll ? ' rolling' : '') }, dots));
+      this.elDots.className = 'dots window' + (scrolled ? ' scrolled' : '');
+      this.elDots.replaceChildren(h('span', { class: 'dots-track' + (roll && scrolled ? ' rolling' : '') }, dots));
       return;
     }
     this.elDots.className = 'dots' + (this.plan.length > 10 ? ' many' : '');
@@ -374,8 +389,8 @@ export class Game {
     let mod = this.pickMod(round, type);
     if (mod && isFixed && mod === 'wirbel') mod = null;
     if (mod && !MOD_TYPES[mod].includes(type)) {
-      // only when a test forces a special round
-      type = MOD_TYPES[mod][0];
+      // the game of this round is fitted to the special round (Wirbel → Paare, Kombo → Paare/Auswahl)
+      type = fitTypeToMod(mod, type);
       this.plan[this.roundIdx] = type;
     }
     let words;
@@ -547,7 +562,11 @@ export class Game {
     this.elModChip.hidden = !m;
     if (m) {
       this.elModChip.className = 'mod-chip mod-' + m + (pop ? ' in' : '');
+      this.elModChip.setAttribute('aria-label', t('mod_' + m));
       this.elModChip.replaceChildren(icon(m), h('span', { class: 'mod-name' }, t('mod_' + m)));
+      // on narrow phones only the icon (the banner already said the name)
+      const name = this.elModChip.querySelector('.mod-name');
+      if (name.scrollWidth > name.clientWidth + 1) this.elModChip.classList.add('compact');
     }
     if (m === 'kombo') {
       this.elSlot.replaceChildren(this.elMulti, this.elFuse);
@@ -1016,7 +1035,14 @@ export class Game {
     info.ids.forEach((id) => store.bumpStat(this.list.id, id, false));
     const summary = this.mode === 'endless' ? this.endlessSummary() : null;
     if (this.mode === 'level') store.recordResult(this.list.id, this.level, { completed: false, timeLeft: 0, round: this.roundIdx + 1 });
+    const st = store.countToday();
     this.root.classList.add('shake');
+    // a small text button below the two main buttons: practise the word(s) of this mistake
+    const ids = [...new Set(info.ids)];
+    const buttons = [
+      [{ label: t('menu'), value: 'menu', kind: 'outline' }, { label: t('again'), value: 'again', kind: 'primary', grow: true }],
+      [{ label: t(ids.length > 1 ? 'practiceWords' : 'practiceWord'), value: 'train', kind: 'text', iconLeft: 'training' }],
+    ];
     setTimeout(() => {
       if (this.destroyed) return;
       this.root.classList.remove('shake');
@@ -1024,7 +1050,10 @@ export class Game {
         title: t('wrongTitle'),
         cls: 'modal-fail',
         icon: { name: 'close', kind: 'err' },
-        body: h('div', { class: 'modal-body' }, this.failBody(info), summary || h('p', { class: 'encourage' }, t('wrongSub'))),
+        body: h('div', { class: 'modal-body' }, this.failBody(info), summary || h('p', { class: 'encourage' }, t('wrongSub')),
+          st.plus ? this.streakChip(st) : null),
+        buttons,
+        trainIds: ids,
       });
     }, this.reducedMotion() ? 0 : 800);
   }
@@ -1039,6 +1068,14 @@ export class Game {
       res.newRecord
         ? h('span', { class: 'record-chip late' }, icon('star'), t('newRecord'))
         : res.best > 0 ? h('p', { class: 'modal-text' }, res.best === 1 ? t('endlessBestOne') : t('endlessBest', { n: res.best })) : null);
+  }
+
+  /** "Tagesserie: 5 Tage" (+1 when this game was the first one of the day). */
+  streakChip(st) {
+    return h('div', { class: 'st-chip-row' },
+      h('span', { class: 'st-chip' + (st.plus ? '' : ' plain') },
+        icon('streak'), t('streakChip') + ' ', h('b', null, st.n + ' ' + tDays(st.n)),
+        st.plus ? h('span', { class: 'st-plus' }, '+1') : null));
   }
 
   okRow(enWord, deWord, cls) {
@@ -1119,23 +1156,26 @@ export class Game {
     const recap = h('div', { class: 'recap' }, this.roundWords.map((w) => h('div', null,
       h('span', { lang: 'en' }, allVariants(w.en, 'en')), h('span', { lang: 'de' }, allVariants(w.de, 'de')))));
     if (this.mode === 'endless') {
+      const summary = this.endlessSummary();
+      const st = store.countToday();
       this.showEndModal({
         title: t('gameOver'),
         center: true,
         cls: 'modal-fail',
         icon: { name: 'endless', kind: 'accent', extra: 'big' },
-        body: h('div', { class: 'modal-body' }, this.endlessSummary(), recap),
+        body: h('div', { class: 'modal-body' }, summary, recap, st.plus ? this.streakChip(st) : null),
       });
       return;
     }
     store.recordResult(this.list.id, this.level, { completed: false, timeLeft: 0, round: this.roundIdx + 1 });
     const [pre, bold, post] = tSplit('timeUpSub', { round: t('roundOf', { r: this.roundIdx + 1, n: this.cfg.rounds }) }, 'round');
     const intro = h('p', { class: 'modal-text', style: { color: 'var(--text)' } }, pre, h('b', null, bold), post);
+    const st = store.countToday();
     this.showEndModal({
       title: t('timeUpTitle'),
       cls: 'modal-fail',
       icon: { name: 'hourglass', kind: 'accent' },
-      body: h('div', { class: 'modal-body' }, intro, recap),
+      body: h('div', { class: 'modal-body' }, intro, recap, st.plus ? this.streakChip(st) : null),
     });
   }
 
@@ -1154,8 +1194,10 @@ export class Game {
     ];
     if (res.newRecord) lines.push(h('span', { class: 'record-chip' }, icon('star'), t('newRecord')));
     if (res.unlocked) lines.push(h('p', { class: 'unlock-line' }, icon('check'), t('unlocked', { level: t('level_' + res.unlocked) })));
+    if (res.endless) lines.push(h('p', { class: 'unlock-line' }, icon('check'), t('endlessUnlockedAll')));
     lines.push(h('p', { class: 'modal-text new-words' }, t('newFixed')));
     if (!next) lines.push(h('p', { class: 'modal-text' }, t('allDone')));
+    lines.push(this.streakChip(store.countToday()));
     const buttons = next
       ? [
         [{ label: t('nextLevel', { level: t('level_' + next) }), value: 'next', kind: 'primary', tall: true, icon: 'arrowRight' }],
@@ -1165,14 +1207,22 @@ export class Game {
     this.showEndModal({ title: t('doneTitle'), icon: { name: 'check', kind: 'ok' }, center: true, body: lines, buttons, next, cls: 'modal-win' });
   }
 
-  showEndModal({ title, body, icon: ic, center = false, buttons, next, cls = '' }) {
+  showEndModal({ title, body, icon: ic, center = false, buttons, next, cls = '', trainIds = [] }) {
     const btns = buttons || [{ label: t('menu'), value: 'menu', kind: 'outline' }, { label: t('again'), value: 'again', kind: 'primary', grow: true }];
     modal({ title, icon: ic, body, buttons: btns, center, cls: 'modal-end ' + cls }).then((v) => {
       if (this.destroyed) return;
-      if (v === 'again') this.start();
+      if (v === 'again') this.replay();
       else if (v === 'next') this.onNextLevel(next);
+      else if (v === 'train' && this.onTrain) { this.destroy(); this.onTrain(trainIds); }
       else { this.destroy(); this.onMenu(); }
     });
+  }
+
+  /** "Nochmal": the new game fades in. */
+  replay() {
+    replay(this.root, 'tr-show');
+    setTimeout(() => this.root.classList.remove('tr-show'), 300);
+    this.start();
   }
 
   // ---------- Fehlertraining ----------
@@ -1238,7 +1288,13 @@ export class Game {
       return;
     }
     if (!next) {
-      this.later(350, () => { this.flyLearned(); this.later(650, () => this.startRound()); });
+      // the last word: it flies into the counter, the board stays empty until the result
+      this.later(350, () => {
+        this.flyLearned();
+        this.board.replaceChildren();
+        this.elTask.textContent = '';
+        this.later(650, () => this.startRound());
+      });
     } else if (nextKb) {
       this.flyLearned();
       this.startRound(true);
@@ -1306,17 +1362,26 @@ export class Game {
     sfx.win();
     this.confetti();
     const n = this.tLearned;
+    const st = store.countToday();
+    const more = store.mistakeWords(this.list.id, this.words).length;
     modal({
-      title: t('trainingDoneTitle'),
+      title: t(more ? 'trainingRoundDone' : 'trainingDoneTitle'),
       icon: { name: 'check', kind: 'ok' },
       center: true,
       cls: 'modal-end modal-win',
-      body: h('div', { class: 'big-stat' },
-        h('span', { class: 'big-number' }, String(n)),
-        h('span', { class: 'eyebrow' }, n === 1 ? t('wordLearned') : t('wordsLearned'))),
-      buttons: [{ label: t('menu'), value: 'menu', kind: 'primary', grow: true, tall: true }],
-    }).then(() => {
+      body: [
+        h('div', { class: 'big-stat' },
+          h('span', { class: 'big-number' }, String(n)),
+          h('span', { class: 'eyebrow' }, n === 1 ? t('wordLearned') : t('wordsLearned'))),
+        more ? h('p', { class: 'modal-text' }, more === 1 ? t('trainingMoreOne') : t('trainingMore', { n: more })) : null,
+        st.plus ? this.streakChip(st) : null,
+      ].filter(Boolean),
+      buttons: more
+        ? [{ label: t('menu'), value: 'menu', kind: 'outline' }, { label: t('practiceMore'), value: 'more', kind: 'primary', grow: true }]
+        : [{ label: t('menu'), value: 'menu', kind: 'primary', grow: true, tall: true }],
+    }).then((v) => {
       if (this.destroyed) return;
+      if (v === 'more') { this.replay(); return; }
       this.destroy();
       this.onMenu();
     });

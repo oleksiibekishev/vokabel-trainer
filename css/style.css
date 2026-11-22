@@ -62,6 +62,11 @@
   --rush-soft: #EEE7F7;
   --rush-stripe: rgba(255, 255, 255, 0.38);
   --line-strong: #87867F;
+  --on-accent: #141413;
+  --olive: #788C5D;
+  --ochre: #C9A82D;
+  --fig: #C46686;
+  --sky: #6A9BCC;
   --scrim: rgba(20, 20, 19, 0.42);
   --toast: #141413;
   --toast-text: #FAF9F5;
@@ -159,7 +164,12 @@ h1, h2, p { margin: 0; }
 /* ---------- header ---------- */
 .topbar { display: flex; align-items: center; gap: 4px; min-height: 56px; margin-left: -10px; }
 .topbar-title { font-family: var(--serif); font-size: 24px; font-weight: 500; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.home-top { margin-left: 0; gap: 12px; }
+.home-top {
+  position: sticky; top: 0; z-index: 3; gap: 8px; margin: calc(-12px - env(safe-area-inset-top)) -16px 0; padding: calc(env(safe-area-inset-top) + 8px) 6px 8px 16px; background: var(--bg);
+}
+.home-top::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--line); opacity: 0; transition: opacity .2s; }
+.home-top.scrolled::after { opacity: 1; }
+.home-top .brand-logo { width: 40px; height: 40px; }
 .brand-logo { width: 44px; height: 44px; flex: none; }
 .brand { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .brand h1 { font-family: var(--serif); font-size: 23px; font-weight: 500; line-height: 1.15; }
@@ -439,6 +449,8 @@ h1, h2, p { margin: 0; }
 .mod-chip .icon { width: 13px; height: 13px; stroke-width: 2.2; }
 .mod-chip.in { animation: var(--a-pop) .3s cubic-bezier(.3, 1.4, .5, 1) both; }
 .mod-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.mod-chip.compact { padding: 0 6px; }
+.mod-chip.compact .mod-name { display: none; }
 .time-slot { flex: none; display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .time-slot:empty { display: none; }
 
@@ -446,7 +458,8 @@ h1, h2, p { margin: 0; }
 .dot.has-mod { width: 8px; height: 8px; border-radius: 2px; transform: rotate(45deg); }
 .dot.has-mod.cur { width: 10px; height: 10px; background: var(--mod); box-shadow: 0 0 0 3px var(--mod-soft); }
 .dot.mark { animation: var(--a-dot) .3s cubic-bezier(.3, 1.4, .5, 1) both; }
-.dots.window { justify-content: flex-end; width: 96px; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 34px); mask-image: linear-gradient(90deg, transparent 0, #000 34px); }
+.dots.window { justify-content: flex-start; height: auto; padding: 5px; margin: -5px; overflow: hidden; }
+.dots.window.scrolled { -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 30px); mask-image: linear-gradient(90deg, transparent 0, #000 30px); }
 .dots-track { flex: none; display: flex; align-items: center; gap: 8px; }
 .dots-track.rolling { animation: var(--a-roll) .3s ease-out; }
 
@@ -801,3 +814,250 @@ h1, h2, p { margin: 0; }
   .modal, .modal-wrap { animation: none; }
   * { transition-duration: .01ms !important; }
 }
+
+
+/* =====================================================================
+   Tagesserie, Kalender, Übergänge (design „Tagesserie, Kalender & Übergänge“)
+   Only transform and opacity are animated. Animations go through variables,
+   so "reduce motion" swaps them in one place.
+   ===================================================================== */
+:root {
+  --st-roll-up-out: rollUpOut; --st-roll-up-in: rollUpIn; --st-roll-down-out: rollDownOut; --st-roll-down-in: rollDownIn;
+  --st-fill: dayFill; --st-spark: spark; --st-wave: dayWave; --st-link: linkGrow; --st-breathe: breathe; --st-breathe-ring: breatheRing;
+  --st-ring: ring; --st-slash: slash; --st-wob: wob; --st-swap: swapIn; --st-bump: bump; --st-pop: popIn;
+  --cal-t-open: calTOpen; --cal-m-open: calMOpen; --cal-b-open: calBOpen; --cal-t-close: calTClose; --cal-m-close: calMClose; --cal-b-close: calBClose;
+  --cal-ghost-out: calGhostOut; --cal-ghost-in: calGhostIn; --cal-row: calRow; --cal-fade-in: none; --cal-fade-out: none; --cal-page-out: pageOut; --cal-page-in: pageIn;
+  --tr-sheet-in: sheetIn; --tr-sheet-out: sheetOut; --tr-recede: sheetRecede; --tr-return: sheetReturn;
+  --tr-c-out: cOut; --tr-c-in: cIn; --tr-c-out-back: cOutBack; --tr-c-in-back: cInBack; --tr-build: build; --tr-show: showIn;
+  --cal-ease: cubic-bezier(.32, 1.2, .4, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --st-roll-up-out: fadeOut; --st-roll-up-in: fadeIn; --st-roll-down-out: fadeOut; --st-roll-down-in: fadeIn;
+    --st-fill: fadeIn; --st-spark: none; --st-wave: none; --st-link: fadeIn; --st-breathe: none; --st-breathe-ring: none;
+    --st-ring: none; --st-slash: fadeIn; --st-wob: none; --st-swap: fadeIn; --st-bump: none; --st-pop: fadeIn;
+    --cal-t-open: none; --cal-m-open: none; --cal-b-open: none; --cal-t-close: none; --cal-m-close: none; --cal-b-close: none;
+    --cal-ghost-out: none; --cal-ghost-in: none; --cal-row: none; --cal-fade-in: fadeIn; --cal-fade-out: fadeOut; --cal-page-out: fadeOut; --cal-page-in: fadeIn;
+    --tr-sheet-in: fadeIn; --tr-sheet-out: fadeOut; --tr-recede: none; --tr-return: none;
+    --tr-c-out: fadeOut; --tr-c-in: fadeIn; --tr-c-out-back: fadeOut; --tr-c-in-back: fadeIn; --tr-build: none; --tr-show: fadeIn;
+  }
+}
+
+/* ---- header chip ---- */
+.streak-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 44px; height: 44px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: inherit; }
+.streak-chip { position: relative; display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 11px 0 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); font-size: 15px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.streak-chip > .icon { width: 18px; height: 18px; stroke-width: 2; }
+.streak-chip.pending { background: var(--bg); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.streak-chip.zero { background: var(--surface2); color: var(--muted); box-shadow: none; }
+.streak-chip.bump { animation: var(--st-bump) .36s cubic-bezier(.3, 1.6, .5, 1); }
+.streak-dot { display: none; position: absolute; top: -2px; right: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bg); }
+.streak-chip.pending .streak-dot { display: block; }
+.streak-dot::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--accent); animation: var(--st-breathe) 2.4s ease-out infinite; }
+.streak-dot.out { animation: fadeOut .2s ease-out forwards; }
+
+/* a number that rolls */
+.roll { display: inline-grid; overflow: hidden; }
+.roll > span { grid-area: 1 / 1; }
+.roll-old { animation: var(--st-roll-up-out) .3s cubic-bezier(.5, 0, .2, 1) forwards; }
+.roll-new { animation: var(--st-roll-up-in) .38s cubic-bezier(.2, .8, .2, 1) 70ms both; }
+.roll.down .roll-old { animation-name: var(--st-roll-down-out); }
+.roll.down .roll-new { animation-name: var(--st-roll-down-in); }
+
+/* sparks around the icon */
+.sparks { position: absolute; left: 50%; top: 50%; z-index: 4; width: 0; height: 0; pointer-events: none; }
+.sparks i { position: absolute; left: -3px; top: -3px; width: 6px; height: 6px; border-radius: 50%; background: var(--c, var(--accent)); opacity: 0; animation: var(--st-spark) .65s cubic-bezier(.2, .8, .2, 1) var(--d, 0ms) forwards; }
+.sparks i:nth-child(3n) { left: -2px; top: -4px; width: 4px; height: 8px; border-radius: 2px; }
+
+/* ---- the tile (opens the calendar) ---- */
+.streak { position: relative; display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; cursor: pointer; transition: transform .12s ease-out; }
+.streak:active { transform: scale(.985); }
+.streak::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; box-shadow: 0 0 0 2px var(--accent); opacity: 0; pointer-events: none; }
+.streak.milestone::after { animation: var(--st-ring) .9s ease-out; }
+.streak-top { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+.streak-icon { position: relative; flex: none; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 12px; background: var(--accent-soft); color: var(--accent-ink); }
+.streak-icon > .icon { width: 24px; height: 24px; stroke-width: 2; }
+.streak-count { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 7px; }
+.streak-num { font-family: var(--serif); font-size: 34px; font-weight: 500; line-height: 1; font-variant-numeric: tabular-nums; }
+.streak-label { font-size: 15px; font-weight: 600; line-height: 1.2; white-space: nowrap; }
+.streak-best { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; line-height: 1; color: var(--muted); font-variant-numeric: tabular-nums; }
+.streak-best > .icon { width: 14px; height: 14px; }
+.streak-best > .icon:first-child { fill: currentColor; stroke: none; }
+.streak-best > .chev { width: 16px; height: 16px; margin: 0 -4px 0 -2px; color: var(--subtle); }
+.streak-best.bump { animation: var(--st-bump) .3s cubic-bezier(.3, 1.6, .5, 1); }
+.streak-hint { display: flex; align-items: center; gap: 6px; min-height: 20px; font-size: 13.5px; font-weight: 500; line-height: 1.35; color: var(--muted); }
+.streak-hint .icon { width: 16px; height: 16px; stroke-width: 2.4; }
+.streak-hint.done { color: var(--ok); font-weight: 700; }
+.streak-hint.lost { color: var(--text); }
+.streak-hint.swap { animation: var(--st-swap) .26s ease-out both; }
+
+/* week Mo–So: played days in clay, days in a row joined like a chain */
+.week { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.day { position: relative; display: flex; justify-content: center; }
+.day-link { position: absolute; top: 50%; right: 50%; width: 100%; height: 4px; margin-top: -2px; background: var(--accent); opacity: .4; transform-origin: left center; }
+.day-link.wait { transform: scaleX(0); }
+.day-link.grow { animation: var(--st-link) .28s cubic-bezier(.4, 0, .2, 1) forwards; }
+.day-dot { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: var(--surface2); color: var(--muted); font-size: 11.5px; font-weight: 700; line-height: 1; }
+.day-fill { position: absolute; inset: 0; border-radius: 50%; background: var(--accent); transform: scale(0); }
+.day-lbl, .day-dot > .icon { position: relative; }
+.day-dot > .icon { width: 16px; height: 16px; stroke-width: 2.6; }
+.day-dot > .icon.pop { animation: var(--st-pop) .3s cubic-bezier(.3, 1.4, .5, 1) both; }
+.day.done .day-dot { color: var(--on-accent); }
+.day.done .day-fill { transform: none; }
+.day.done.today .day-dot { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--accent); }
+.day.pending .day-dot { background: var(--surface); color: var(--accent-ink); outline: 2px dashed var(--accent); outline-offset: -2px; }
+.day.pending .day-dot::before { content: ""; position: absolute; inset: 0; border-radius: 50%; box-shadow: 0 0 0 2px var(--accent); animation: var(--st-breathe-ring) 2.4s ease-out infinite; }
+.day.filling .day-dot { color: var(--on-accent); }
+.day.filling .day-fill { animation: var(--st-fill) .42s cubic-bezier(.3, 1.4, .5, 1) forwards; }
+.day.missed .day-dot { background: transparent; color: var(--subtle); box-shadow: inset 0 0 0 1.5px var(--line2); }
+.day.missed .day-dot::after { content: ""; position: absolute; left: 6px; right: 6px; top: 50%; height: 1.5px; margin-top: -1px; background: var(--line-strong); transform: rotate(-45deg); }
+.day.missing .day-dot { animation: var(--st-wob) .42s ease-in-out; }
+.day.missing .day-dot::after { animation: var(--st-slash) .32s cubic-bezier(.4, 0, .2, 1) both; }
+.day.future .day-dot { background: transparent; color: var(--subtle); box-shadow: inset 0 0 0 1.5px var(--line); }
+.day.old .day-dot { opacity: .4; }
+.week.broken .day-link { animation: linkBreak .5s ease-out forwards; }
+.week.broken .day.done .day-dot { animation: dim .5s ease-out forwards; }
+.week.wave .day-dot { animation: var(--st-wave) .46s cubic-bezier(.3, 1.4, .5, 1) calc(var(--i, 0) * 60ms) both; }
+.callout-layer.fixed { position: fixed; z-index: 45; }
+
+/* ---- in the result dialogs ---- */
+.st-chip-row { display: flex; justify-content: center; }
+.st-chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 5px 0 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); font-size: 14px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.st-chip.plain { padding-right: 12px; }
+.st-chip > .icon { width: 17px; height: 17px; stroke-width: 2; }
+.st-chip b { font-weight: 800; }
+.st-plus { display: inline-flex; align-items: center; height: 22px; padding: 0 7px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 12.5px; font-weight: 800; line-height: 1; animation: var(--st-pop) .32s cubic-bezier(.3, 1.4, .5, 1) .38s both; }
+.st-note { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--surface2); font-size: 14px; font-weight: 500; line-height: 1.4; color: var(--text); text-align: left; }
+.st-note .icon { width: 18px; height: 18px; margin-top: 1px; color: var(--accent-ink); stroke-width: 2; }
+.modal-actions.stacked > .btn.text { height: 40px; margin-top: -2px; color: var(--muted); font-weight: 600; }
+.modal-actions.stacked > .btn.text .icon { width: 17px; height: 17px; color: var(--accent-ink); }
+
+/* level cards after a game */
+.unlock-anim { animation: unlockIn .4s ease-out both; }
+.pop-anim { animation: var(--st-pop) .32s cubic-bezier(.3, 1.4, .5, 1) both; }
+.level-status.swap, .mode-status.swap { animation: var(--st-swap) .26s ease-out both; }
+
+/* ---- calendar: the tile stretches over the start screen ---- */
+.cal-scrim { position: fixed; inset: 0; z-index: 60; background: var(--scrim); opacity: 0; }
+.cal-scrim.in { animation: dimIn .3s ease-out forwards; }
+.cal-scrim.out { animation: dimOut .3s ease-in .14s both; }
+.cal { position: fixed; z-index: 61; }
+.cal-shape { position: absolute; inset: 0; pointer-events: none; }
+.cal-cap, .cal-mid { position: absolute; left: 0; right: 0; background: var(--surface); border: 1px solid var(--line); }
+.cal-mid { top: 15px; bottom: 15px; border-top: 0; border-bottom: 0; transform-origin: 50% 0; }
+.cal-cap.t { top: 0; height: 16px; border-bottom: 0; border-radius: 16px 16px 0 0; }
+.cal-cap.b { bottom: 0; height: 16px; border-top: 0; border-radius: 0 0 16px 16px; }
+.cal-shadow { position: absolute; inset: 0; border-radius: 16px; box-shadow: var(--shadow-lg); }
+.cal-ghost { position: absolute; left: 0; right: 0; top: 0; display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; opacity: 0; pointer-events: none; }
+.cal-body { position: relative; height: 100%; overflow-x: hidden; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; scrollbar-width: none; overscroll-behavior: contain; }
+.cal-body::-webkit-scrollbar { display: none; }
+.cal.opening { animation: var(--cal-fade-in) .26s ease-out both; }
+.cal.opening .cal-cap.t { animation: var(--cal-t-open) .48s var(--cal-ease) both; }
+.cal.opening .cal-mid { animation: var(--cal-m-open) .48s var(--cal-ease) both; }
+.cal.opening .cal-cap.b { animation: var(--cal-b-open) .48s var(--cal-ease) both; }
+.cal.opening .cal-shadow { animation: fadeIn .22s ease-out .26s both; }
+.cal.opening .cal-ghost { animation: var(--cal-ghost-out) .48s ease-out both; }
+.cal.opening .cal-body > * { animation: var(--cal-row) .24s cubic-bezier(.2, .8, .2, 1) calc(150ms + var(--i, 0) * 28ms) both; }
+.cal.opening .cal-pages .cal-row { animation: var(--cal-row) .24s cubic-bezier(.2, .8, .2, 1) calc(150ms + var(--i, 0) * 28ms) both; }
+.cal.opening .cal-pages { animation: none; }
+.cal.closing { animation: var(--cal-fade-out) .3s ease-in both; }
+.cal.closing .cal-cap.t { animation: var(--cal-t-close) .36s cubic-bezier(.4, 0, .2, 1) 80ms both; }
+.cal.closing .cal-mid { animation: var(--cal-m-close) .36s cubic-bezier(.4, 0, .2, 1) 80ms both; }
+.cal.closing .cal-cap.b { animation: var(--cal-b-close) .36s cubic-bezier(.4, 0, .2, 1) 80ms both; }
+.cal.closing .cal-shadow { animation: fadeOut .12s ease-in both; }
+.cal.closing .cal-ghost { animation: var(--cal-ghost-in) .42s ease-out both; }
+.cal.closing .cal-body { animation: fadeOut .12s ease-in both; }
+.cal-head .icon-btn { margin-right: -10px; }
+.cal-stats { display: flex; align-items: center; gap: 6px; margin-top: -2px; font-size: 13px; font-weight: 600; line-height: 1.3; color: var(--muted); }
+.cal-stats > .icon { width: 14px; height: 14px; fill: currentColor; stroke: none; }
+.cal-nav { display: flex; align-items: center; justify-content: space-between; margin: 0 -10px; padding-top: 8px; border-top: 1px solid var(--line); }
+.cal-nav .icon-btn:disabled { opacity: .3; }
+.cal-month { flex: 1; margin: 0; font-family: var(--serif); font-size: 20px; font-weight: 500; line-height: 1.2; text-align: center; }
+.cal-month.swap, .cal-stats span.swap { animation: var(--st-swap) .26s ease-out both; display: inline-block; }
+.cal-dow, .cal-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.cal-dow { margin-top: -4px; }
+.cal-dow span { font-size: 11px; font-weight: 700; line-height: 16px; color: var(--muted); text-align: center; }
+.cal-pages { display: grid; touch-action: pan-y; }
+.cal-page { grid-area: 1 / 1; }
+.cal-page.out { pointer-events: none; animation: var(--cal-page-out) .2s ease-in forwards; }
+.cal-page.in { animation: var(--cal-page-in) .26s cubic-bezier(.2, .8, .2, 1) both; }
+.cal-cell { position: relative; height: 42px; display: flex; align-items: center; justify-content: center; }
+.cal-cell.jl::before, .cal-cell.jr::after { content: ""; position: absolute; top: 50%; width: 50%; height: 4px; margin-top: -2px; background: var(--accent); opacity: .4; }
+.cal-cell.jl::before { left: 0; }
+.cal-cell.jr::after { right: 0; }
+.cal-dot { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; font-size: 12.5px; font-weight: 600; line-height: 1; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cal-cell.lit .cal-dot { background: var(--accent); color: var(--on-accent); font-weight: 700; }
+.cal-cell.future .cal-dot { color: var(--subtle); font-weight: 500; }
+.cal-cell.today .cal-dot { color: var(--accent-ink); font-weight: 800; background: var(--surface); outline: 2px dashed var(--accent); outline-offset: -2px; }
+.cal-cell.today.lit .cal-dot { color: var(--on-accent); background: var(--accent); outline: 0; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--accent); }
+.cal-legend { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12.5px; font-weight: 500; line-height: 1.3; color: var(--muted); }
+.cal-key { flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
+.cal-key.pending { background: transparent; border: 1.5px dashed var(--accent); }
+.cal-legend i { width: 10px; }
+
+/* ---- screen transitions ---- */
+html.busy body { pointer-events: none; }
+html.locked, html.locked body { overflow: hidden; }
+/* sheets (lists, new list, settings): from the bottom, the screen behind recedes and gets darker */
+.sheet-dim { position: fixed; inset: 0; z-index: 39; background: var(--scrim); opacity: 0; pointer-events: none; }
+.sheet-dim.in { animation: dimIn .38s cubic-bezier(.2, .8, .2, 1) forwards; }
+.sheet-dim.out { animation: dimOut .3s cubic-bezier(.4, 0, .6, 1) forwards; }
+.sheet {
+  position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; top: calc(env(safe-area-inset-top) + 14px); overflow-y: auto; overscroll-behavior: contain;
+  background: var(--bg); border-radius: 20px 20px 0 0; box-shadow: 0 -6px 24px rgba(20, 20, 19, .16);
+}
+.sheet::before { content: ""; position: absolute; top: 6px; left: 50%; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: var(--line2); }
+.sheet-inner { max-width: 560px; margin: 0 auto; padding: 10px calc(env(safe-area-inset-right) + 16px) calc(env(safe-area-inset-bottom) + 28px) calc(env(safe-area-inset-left) + 16px); }
+.sheet.sheet-in { animation: var(--tr-sheet-in) .4s cubic-bezier(.2, .85, .25, 1) both; }
+.sheet.sheet-out { animation: var(--tr-sheet-out) .3s cubic-bezier(.4, 0, .6, 1) forwards; }
+.app.recede { transform-origin: 50% var(--sy, 0px); animation: var(--tr-recede) .4s cubic-bezier(.2, .85, .25, 1) forwards; }
+.app.return { transform-origin: 50% var(--sy, 0px); animation: var(--tr-return) .3s cubic-bezier(.4, 0, .6, 1) both; }
+.sheet.recede { border-radius: 20px; transform-origin: 50% 0; animation: var(--tr-recede) .4s cubic-bezier(.2, .85, .25, 1) forwards; }
+.sheet.return { border-radius: 20px; transform-origin: 50% 0; animation: var(--tr-return) .3s cubic-bezier(.4, 0, .6, 1) both; }
+/* game ↔ start screen: short fades with a slight scale, the parts come in one after another */
+.tr-c-out { animation: var(--tr-c-out) .15s cubic-bezier(.4, 0, 1, 1) forwards; }
+.tr-c-in { animation: var(--tr-c-in) .22s cubic-bezier(0, 0, .2, 1) .1s both; }
+.tr-c-out-back { animation: var(--tr-c-out-back) .15s cubic-bezier(.4, 0, 1, 1) forwards; }
+.tr-c-in-back { animation: var(--tr-c-in-back) .22s cubic-bezier(0, 0, .2, 1) .1s both; }
+.tr-build > * { animation: var(--tr-build) .28s cubic-bezier(.2, .8, .2, 1) calc(120ms + var(--i, 0) * 40ms) both; }
+.tr-build > .fx-layer { animation: none; }
+.game.tr-show { animation: var(--tr-show) .24s cubic-bezier(.2, .8, .2, 1) both; }
+
+@keyframes rollUpOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-75%); } }
+@keyframes rollUpIn { from { opacity: 0; transform: translateY(75%); } to { opacity: 1; transform: none; } }
+@keyframes rollDownOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(75%); } }
+@keyframes rollDownIn { from { opacity: 0; transform: translateY(-75%); } to { opacity: 1; transform: none; } }
+@keyframes dayFill { 0% { transform: scale(0); } 70% { transform: scale(1.12); } 100% { transform: scale(1); } }
+@keyframes spark { 0% { opacity: 0; transform: rotate(var(--a)) translateY(-8px) scale(.5); } 25% { opacity: 1; } 100% { opacity: 0; transform: rotate(var(--a)) translateY(calc(var(--r, 28px) * -1)) scale(.2); } }
+@keyframes dayWave { 0%, 100% { transform: none; } 40% { transform: translateY(-6px) scale(1.12); } }
+@keyframes linkGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes linkBreak { to { opacity: .14; } }
+@keyframes dim { to { opacity: .4; } }
+@keyframes breathe { 0% { opacity: .6; transform: scale(1); } 60%, 100% { opacity: 0; transform: scale(2.8); } }
+@keyframes breatheRing { 0% { opacity: .7; transform: scale(1); } 60%, 100% { opacity: 0; transform: scale(1.45); } }
+@keyframes ring { 0% { opacity: .9; transform: none; } 100% { opacity: 0; transform: scale(1.05, 1.12); } }
+@keyframes slash { from { transform: rotate(-45deg) scaleX(0); } to { transform: rotate(-45deg) scaleX(1); } }
+@keyframes swapIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes unlockIn { from { opacity: .6; } to { opacity: 1; } }
+@keyframes dimIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dimOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes calTOpen { from { transform: translateY(var(--dt)); } to { transform: none; } }
+@keyframes calMOpen { from { transform: translateY(var(--dt)) scaleY(var(--k)); } to { transform: none; } }
+@keyframes calBOpen { from { transform: translateY(var(--db)); } to { transform: none; } }
+@keyframes calTClose { from { transform: none; } to { transform: translateY(var(--dt)); } }
+@keyframes calMClose { from { transform: none; } to { transform: translateY(var(--dt)) scaleY(var(--k)); } }
+@keyframes calBClose { from { transform: none; } to { transform: translateY(var(--db)); } }
+@keyframes calGhostOut { 0% { opacity: 1; transform: translateY(var(--dt)); } 30% { opacity: 0; } 100% { opacity: 0; transform: none; } }
+@keyframes calGhostIn { 0%, 40% { opacity: 0; transform: none; } 100% { opacity: 1; transform: translateY(var(--dt)); } }
+@keyframes calRow { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes pageOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(calc(var(--px, 28px) * -1)); } }
+@keyframes pageIn { from { opacity: 0; transform: translateX(var(--px, 28px)); } to { opacity: 1; transform: none; } }
+@keyframes sheetIn { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes sheetOut { from { transform: none; } to { transform: translateY(100%); } }
+@keyframes sheetRecede { from { transform: none; } to { transform: scale(.92); } }
+@keyframes sheetReturn { from { transform: scale(.92); } to { transform: none; } }
+@keyframes cOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(1.04); } }
+@keyframes cIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes cOutBack { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(.96); } }
+@keyframes cInBack { from { opacity: 0; transform: scale(1.04); } to { opacity: 1; transform: none; } }
+@keyframes build { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes showIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }

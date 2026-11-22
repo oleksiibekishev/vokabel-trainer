@@ -65,6 +65,9 @@ const ICONS = {
   endless: '<path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z"/>',
   training: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
   trendDown: '<path d="m22 17-8.5-8.5-5 5L2 7"/><path d="M16 17h6v-6"/>',
+  streak: '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/>',
+  chevronLeft: '<path d="m15 18-6-6 6-6"/>',
+  chevronRight: '<path d="m9 18 6-6-6-6"/>',
 };
 const FILLED = new Set(['play', 'pause', 'star']);
 
@@ -120,7 +123,29 @@ function makeButton(b, close) {
     class: 'btn ' + (b.kind || 'outline') + (b.grow ? ' grow' : '') + (b.tall ? ' tall' : ''),
     type: 'button',
     onclick: () => close(b.value),
-  }, b.label, b.icon ? icon(b.icon, 'accent') : null);
+  }, b.iconLeft ? icon(b.iconLeft) : null, b.label, b.icon ? icon(b.icon, 'accent') : null);
+}
+
+// ---------- system status bar ----------
+// While a dialog, sheet or the calendar dims the page, the status bar gets the same dimmed tone
+// (page colour under the scrim), so there is no light/grey band above it.
+const DIMMED = { light: '#999996', dark: '#111110' };
+const dimKeys = new Set();
+let dimSeq = 0;
+export function dimStatusBar(key, on) {
+  if (on) dimKeys.add(key); else dimKeys.delete(key);
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
+    if (!m.dataset.base) m.dataset.base = m.getAttribute('content');
+    const dark = (m.getAttribute('media') || '').includes('dark');
+    m.setAttribute('content', dimKeys.size ? DIMMED[dark ? 'dark' : 'light'] : m.dataset.base);
+  });
+}
+
+/** Removes every open dialog at once (when the screen changes). */
+export function closeAllModals() {
+  document.querySelectorAll('.modal-wrap').forEach((m) => m.remove());
+  for (const k of [...dimKeys]) if (k.startsWith('modal')) dimKeys.delete(k);
+  dimStatusBar('', false);
 }
 
 /**
@@ -132,9 +157,12 @@ export function modal({ title, icon: ic, body, buttons, cls = '', center = false
   return new Promise((resolve) => {
     const prevFocus = document.activeElement;
     let done = false;
+    const dimKey = 'modal' + (++dimSeq);
+    if (!clear) dimStatusBar(dimKey, true);
     const close = (value) => {
       if (done) return;
       done = true;
+      dimStatusBar(dimKey, false);
       wrap.classList.add('closing');
       setTimeout(() => wrap.remove(), 160);
       if (prevFocus && prevFocus.focus && prevFocus.isConnected) {

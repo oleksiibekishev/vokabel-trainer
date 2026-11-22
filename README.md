@@ -19,12 +19,13 @@ Auf dem Handy installieren:
 - Ein Timer für das ganze Level, jede geschaffte Runde gibt Bonuszeit – aber nur bis zum Limit.
 - Ein Fehler → zurück zu Runde 1 (mit Animation, was falsch war).
 - Runde 1–3 haben dieselben Wörter, bis man das Level schafft – danach werden sie neu gemischt (andere Wörter). Ab Runde 4 immer zufällig.
-- „Mittel“ wird nach „Leicht“ freigeschaltet, „Schwer“ nach „Mittel“, „Endlos“ nach „Schwer“ – pro Wortliste.
+- „Mittel“ wird nach „Leicht“ freigeschaltet, „Schwer“ nach „Mittel“ – pro Wortliste.
+- „Endlos“ öffnet sich, sobald „Mittel“ in irgendeiner Liste geschafft ist – dann für alle Listen und für immer (auch nach „Fortschritt zurücksetzen“).
 - Wörter mit Fehlern kommen öfter dran.
 
 ### Spezialrunden (zufällig ab Runde 4)
 
-Jede Runde ab Runde 4 wird mit 25 % zur Spezialrunde, nie zwei hintereinander. Höchstens 1 (Leicht), 2 (Mittel) bzw. 3 (Schwer) pro Spiel – oft auch gar keine.
+Jede Runde ab Runde 4 wird mit 25 % zur Spezialrunde, nie zwei hintereinander. Höchstens 1 (Leicht), 2 (Mittel) bzw. 3 (Schwer) pro Spiel – oft auch gar keine. Alle erlaubten Spezialrunden sind gleich häufig; das Spiel der Runde wird passend gemacht (Wirbel → Paare, Kombo → Paare/Auswahl).
 
 | Spezialrunde | Spiele | Was passiert |
 |---|---|---|
@@ -34,8 +35,15 @@ Jede Runde ab Runde 4 wird mit 25 % zur Spezialrunde, nie zwei hintereinander. H
 
 ### Weitere Modi
 
-- **Endlos** (nach „Schwer“): Runden ohne Ende mit allen Spielen, Start 30 s, **kein Limit**. Bonus: +10 s bis Runde 10, +8 s bis 20, +6 s bis 30, danach +5 s. Spezialrunden werden häufiger (25 % → 50 %), Zeitraffer ab Runde 21 2×. Ein Fehler beendet das Spiel, Rekord = geschaffte Runden.
-- **Fehlertraining**: nur Wörter mit Fehlern, ohne Zeit. Jedes Wort muss 3× richtig sein (Auswahl → Lücken → Schreiben), dann steht sein Fehlerzähler wieder auf 0. Ein Fehler schickt das Wort zurück an den Anfang.
+- **Endlos** (nach „Mittel“, siehe oben): Runden ohne Ende mit allen Spielen, Start 30 s, **kein Limit**. Bonus: +10 s bis Runde 10, +8 s bis 20, +6 s bis 30, danach +5 s. Spezialrunden werden häufiger (25 % → 50 %), Zeitraffer ab Runde 21 2×. Ein Fehler beendet das Spiel, Rekord = geschaffte Runden.
+- **Fehlertraining**: nur Wörter mit Fehlern, ohne Zeit, höchstens 10 Wörter pro Durchgang (die schwierigsten zuerst). Jedes Wort muss 3× richtig sein (Auswahl → Lücken → Schreiben), dann steht sein Fehlerzähler wieder auf 0. Ein Fehler schickt das Wort zurück an den Anfang. Im Fehler-Fenster eines Levels startet „Dieses Wort üben“ das Fehlertraining mit genau diesem Wort.
+
+### Tagesserie
+
+- Der erste zu Ende gespielte Durchgang des Tages (gewonnen oder verloren – Level, Endlos oder Fehlertraining) zählt den Tag; „Beenden“ zählt nicht.
+- Oben im Kopf und in der Kachel über der Liste: Tage in Folge, Rekord und die Woche Mo–So. Ein verpasster Tag setzt die Serie auf 0, der Rekord bleibt.
+- Ein Tipp auf die Kachel (oder den Zähler) öffnet den Kalender mit allen gespielten Tagen; blättern mit ‹ › oder Wischen.
+- Gespeichert werden nur die Tage (`YYYY-MM-DD`, Ortszeit); sie sind im Sicherungscode enthalten und werden mit „Fortschritt zurücksetzen“ gelöscht.
 
 ## Eigene Wortlisten
 
@@ -59,6 +67,8 @@ to record - erfassen, aufnehmen
 
 Warmer, ruhiger Stil: Ivory-Hintergrund, dunkle Hauptbuttons, Clay (`#D97757`) nur für „spannende“ Stellen (Zeitbalken, aktuelle Runde, Auswahl, „+10 s“). Hell- und Dunkelmodus folgen dem Handy.
 
+Übergänge: Listen und Einstellungen kommen als Blatt von unten (der Startbildschirm tritt zurück), ein Spiel blendet ruhig ein und aus. Während ein Dialog offen ist, wird auch die Statusleiste abgedunkelt.
+
 Spezialrunden: Wirbel in Clay, Kombo und Extrazeit in Blau (`--extra` `#2A65A8`), Zeitraffer in Violett (`--rush` `#8E5FD0`, gestreifter Zeitbalken). Eine Spezialrunde ist in der Punktreihe eine Raute. Bei „Bewegung reduzieren“ gibt es statt Bewegung nur Ein- und Ausblenden.
 
 Schriften (selbst gehostet in `fonts/`, SIL Open Font License): Source Serif 4 (Titel, Timer), Manrope (Text), JetBrains Mono (Lücken, Buchstabenvergleich). Icons: Lucide (ISC-Lizenz).
@@ -69,6 +79,7 @@ Reines HTML/CSS/JavaScript ohne Build-Schritt.
 
 - `js/core.js` – Logik (Parser, Antwortprüfung, Wortauswahl), ohne DOM
 - `js/game.js` – Spielablauf und die 4 Minispiele
+- `js/streak.js` – Tagesserie: Zähler, Kachel, Kalender
 - `js/main.js` – Bildschirme (Start, Listen, Wörter, Einstellungen)
 - `js/builtin-lists.js` – Listen, die alle automatisch bekommen
 - `sw.js` – Offline-Cache
