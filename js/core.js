@@ -20,13 +20,13 @@ export const LEVELS = {
     rounds: 10, start: 40, bonus: 10, cap: 40, mixed: true, gapRatio: 0.35, keepFirst: true,
     fixed: ['pairs', 'choice', 'pairs'],
     pool: ['pairs', 'pairs', 'choice', 'choice', 'gaps', 'gaps', 'gaps'],
-    mods: ['wirbel', 'kombo', 'zeitraffer'], modMax: 2, kombo: 3000, fastSteps: [[1, 1.5]],
+    mods: ['wirbel', 'kombo', 'zeitraffer', 'zeitbombe'], modMax: 2, kombo: 3000, fastSteps: [[1, 1.5]],
   },
   hard: {
     rounds: 15, start: 30, bonus: 10, cap: 30, mixed: true, gapRatio: 0.5, keepFirst: false,
     fixed: ['pairs', 'choice', 'spell'],
     pool: ['pairs', 'pairs', 'pairs', 'choice', 'choice', 'gaps', 'gaps', 'gaps', 'spell', 'spell', 'spell', 'spell'],
-    mods: ['wirbel', 'kombo', 'zeitraffer'], modMax: 3, kombo: 2500, fastSteps: [[1, 1.5]],
+    mods: ['wirbel', 'kombo', 'zeitraffer', 'zeitbombe'], modMax: 3, kombo: 2500, fastSteps: [[1, 1.5]],
   },
 };
 
@@ -35,7 +35,7 @@ export const ENDLESS = {
   start: 30, cap: 0, mixed: true, gapRatio: 0.5, keepFirst: false,
   bonusSteps: [[1, 10], [11, 8], [21, 6], [31, 5]],
   pool: LEVELS.hard.pool,
-  mods: ['wirbel', 'kombo', 'zeitraffer'], modMax: Infinity, kombo: 2500, fastSteps: [[1, 1.5], [21, 2]],
+  mods: ['wirbel', 'kombo', 'zeitraffer', 'zeitbombe'], modMax: Infinity, kombo: 2500, fastSteps: [[1, 1.5], [21, 2]],
   modChance: 0.25, modChanceGrow: 0.01, modChanceMax: 0.5,
 };
 
@@ -44,14 +44,37 @@ export const MIN_WORDS = 4;
 
 // ---------- time, special rounds ----------
 
-export const MOD_IDS = ['wirbel', 'kombo', 'zeitraffer'];
-/** Which games a special round can be played with. */
-export const MOD_TYPES = { wirbel: ['pairs'], kombo: ['pairs', 'choice'], zeitraffer: ['pairs', 'choice', 'gaps', 'spell'] };
+export const MOD_IDS = ['wirbel', 'kombo', 'zeitraffer', 'zeitbombe'];
+/** Which games a special round can be played with (Zeitbombe has its own 4 × 2 pairs board). */
+export const MOD_TYPES = { wirbel: ['pairs'], kombo: ['pairs', 'choice'], zeitraffer: ['pairs', 'choice', 'gaps', 'spell'], zeitbombe: ['pairs'] };
 export const MOD_CHANCE = 0.25;
 export const MOD_FIRST_ROUND = 4;
 export const WIRBEL_EXTRA = 3;
 export const KOMBO_STEP = 5;
 export const KOMBO_MAX = 5;
+/**
+ * Zeitbombe (test version, Mittel/Schwer/Endlos): `need` pairs in `secs` seconds on a board of
+ * `pairs` pairs; after every `swapEvery` found pairs the whole board gets new words. A wrong pair
+ * locks the board for `lockMs`. Success: the time is full again (Endlos: +endlessBonus s);
+ * when the time runs out the game is over. Lists need at least `minWords` words.
+ */
+export const BOMB = { secs: 10, need: 5, pairs: 4, swapEvery: 2, lockMs: 1000, alarmMs: 3000, endlessBonus: 20, minWords: 8 };
+
+/** Zeitbombe timer: "09,87" (seconds, comma, hundredths; rounded up so 0,00 means really over). */
+export function bombClock(ms) {
+  const c = Math.max(0, Math.ceil(ms / 10 - 1e-6));
+  const s = Math.floor(c / 100);
+  const r = c % 100;
+  return (s < 10 ? '0' : '') + s + ',' + (r < 10 ? '0' : '') + r;
+}
+
+/**
+ * Zeitbombe board: tiles row by row [left, right, left, right, …]. Every pair has one tile on
+ * each side; English and German are mixed between the sides.
+ */
+export function bombLayout(words, rnd = Math.random) {
+  return wirbelOrder(words.map((w) => ({ en: { w, side: 'en' }, de: { w, side: 'de' } })), true, rnd);
+}
 
 /** Value of a step table [[from, value], ...] at position i. */
 export function stepValue(steps, i) {

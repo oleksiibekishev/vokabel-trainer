@@ -1,8 +1,9 @@
 import {
   LEVELS, LEVEL_IDS, ENDLESS, ROUND_SIZE, WIRBEL_EXTRA, KOMBO_MAX, MOD_TYPES, buildTypePlan, endlessTypes, pickWords, pickDistractors,
   makeGaps, checkAnswer, closestForm, answerDiff, shuffle, wordFilterFor, variants, pickVariant, allVariants, gapTargets, norm,
-  stepValue, applyBonus, komboNext, rollModifier, fitTypeToMod, placeNewPairs, wirbelOrder, trainingTypes, trainingPick,
+  stepValue, applyBonus, komboNext, rollModifier, fitTypeToMod, placeNewPairs, wirbelOrder, trainingTypes, trainingPick, BOMB,
 } from './core.js';
+import { Bomb } from './bomb.js';
 import * as store from './store.js';
 import { t, tSplit, tDays } from './i18n.js';
 import { h, icon, levelBars, modal, sfx, dimStatusBar } from './ui.js';
@@ -44,7 +45,7 @@ function replay(el, cls) {
  * 'endless' (rounds without end) or 'training' (Fehlertraining: words with mistakes, no timer).
  */
 export class Game {
-  constructor({ root, list, level, onMenu, onNextLevel, onTrain, focus = [] }) {
+  constructor({ root, list, level, onMenu, onNextLevel, onTrain, focus = [], forceMods = null }) {
     this.root = root;
     this.list = list;
     this.level = level;
@@ -58,6 +59,13 @@ export class Game {
     if (this.mode === 'endless') this.cfg = { ...ENDLESS };
     else if (this.mode === 'training') this.cfg = { timer: false, mixed: true, gapRatio: 0.35, keepFirst: true };
     else this.cfg = { ...LEVELS[level], ...store.timing(level) };
+    // Zeitbombe (test version): can be switched off in the settings and needs at least 8 words
+    if (this.cfg.mods && (store.settings().zeitbombe === false || this.words.length < BOMB.minWords)) {
+      this.cfg.mods = this.cfg.mods.filter((m) => m !== 'zeitbombe');
+    }
+    // "Zeitbombe ausprobieren": a special round forced into a round ({ 1: 'zeitbombe' })
+    this.forceMods = forceMods;
+    this.bomb = null;
     this.capMs = (this.cfg.cap || 0) * 1000;
     // tests can switch special rounds off ('off') or force them ({ 4: 'wirbel' })
     this.testMods = typeof window !== 'undefined' ? window.__vtMods : undefined;
@@ -162,6 +170,7 @@ export class Game {
     this.epoch++;
     this.ended = false;
     this.holds.clear();
+    if (this.bomb) this.bomb.reset();
     this.root.classList.remove('shake', 'paused', 'on-extra', 'mod-fast', 'x2');
     this.fx.replaceChildren();
     this.used = new Set();
@@ -232,6 +241,7 @@ export class Game {
         }
       }
     }
+    if (this.bomb && this.bomb.ticking()) this.bomb.tick(dt);
     this.renderTimer();
     this.raf = requestAnimationFrame(this.tick);
   }
@@ -265,7 +275,7 @@ export class Game {
   renderTimer() {
     if (this.cfg.timer === false) return;
     const sec = Math.max(0, Math.ceil(this.timeLeft / 1000));
-    const low = this.timeLeft + this.reserve <= 10000 && !this.ended;
+    const low = this.timeLeft + this.reserve <= 10000 && !this.ended && !(this.bomb && this.bomb.state !== 'off');
     if (sec !== this.shownSec) {
       this.shownSec = sec;
       this.elTimerNum.textContent = String(sec);
@@ -301,6 +311,9 @@ export class Game {
   }
 
   showPause(askQuit) {
+    // Zeitbombe: a pause would give time to read the words – the bomb starts again with new ones
+    const bombNote = this.bomb && this.bomb.interrupt()
+      ? h('p', { class: 'st-note zb-note' }, icon('zeitbombe'), h('span', null, t('zbPauseNote'))) : null;
     this.hold('pause');
     this.root.classList.add('paused');
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
@@ -309,6 +322,7 @@ export class Game {
         title: t('quitTitle'),
         body: h('div', { class: 'modal-body' },
           h('p', { class: 'modal-text' }, t(this.mode === 'training' ? 'quitTextTraining' : 'quitText')),
+          bombNote,
           store.streak().doneToday ? null : h('p', { class: 'st-note' }, icon('streak'), h('span', null, t('streakQuitNote')))),
         buttons: [{ label: t('quit'), value: 'quit', kind: 'danger' }, { label: t('resume'), value: 'resume', kind: 'outline', grow: true }],
       }
@@ -317,6 +331,7 @@ export class Game {
         center: true,
         clear: true,
         icon: { name: 'pause', kind: 'accent', extra: 'big' },
+        body: bombNote ? h('div', { class: 'modal-body' }, bombNote) : null,
         buttons: [{ label: t('quit'), value: 'quit', kind: 'outline' }, { label: t('resume'), value: 'resume', kind: 'primary', grow: true }],
       };
     modal(opts).then((v) => {
@@ -329,6 +344,7 @@ export class Game {
       this.root.classList.remove('paused');
       this.release('pause');
       this.last = null;
+      if (this.bomb && this.bomb.needRestart) this.bomb.restart();
       if (this.currentInput && this.currentInput.isConnected) this.currentInput.focus({ preventScroll: true });
     });
   }
@@ -345,7 +361,7 @@ export class Game {
   dotClass(i) {
     const mod = i < this.roundIdx || (i === this.roundIdx && this.modRevealed) ? this.roundMods[i] : null;
     return 'dot' + (i < this.roundIdx ? ' done' : '') + (i === this.roundIdx ? ' cur' : '') + (i < this.fixed.length ? ' fixed' : '')
-      + (mod ? ' has-mod mod-' + mod : '');
+      + (mod ? ' has-mod mod-' + mod + (mod === 'zeitbombe' ? ' zb-dot' : '') : '');
   }
 
   /** Round dots; a special round is a diamond. Endlos shows only the last rounds. */
@@ -379,6 +395,7 @@ export class Game {
   pickMod(round, type) {
     const tm = this.testMods;
     if (tm !== undefined) return tm && typeof tm === 'object' ? tm[round] || null : null;
+    if (this.forceMods && this.forceMods[round]) return this.forceMods[round];
     return rollModifier(this.cfg, round, type, this.roundMods[this.roundIdx - 1] || null, this.modCount);
   }
 
@@ -401,8 +418,16 @@ export class Game {
       type = fitTypeToMod(mod, type);
       this.plan[this.roundIdx] = type;
     }
-    let words;
-    if (isFixed) {
+    let words = null;
+    if (mod === 'zeitbombe') {
+      // own board: 4 pairs now, new words after every 2 found pairs (bomb.js)
+      if (!this.bomb) this.bomb = new Bomb(this);
+      words = this.bomb.begin();
+      if (words.length < BOMB.pairs) { mod = null; words = null; this.release('bomb'); }
+    }
+    if (words) {
+      // Zeitbombe: the words come from bomb.js
+    } else if (isFixed) {
       words = this.fixed[this.roundIdx].ids.map((id) => this.byId.get(id)).filter(Boolean);
     } else {
       const n = ROUND_SIZE[type] + (mod === 'wirbel' ? WIRBEL_EXTRA : 0);
@@ -443,6 +468,12 @@ export class Game {
   }
 
   renderBoard(type, words) {
+    if (this.mod === 'zeitbombe' && this.bomb) {
+      this.pairs = null;
+      this.bomb.renderBoard(words, { covered: true });
+      this.renderPairsCount();
+      return;
+    }
     this.board.replaceChildren();
     this.board.className = 'board board-' + type;
     this.pairs = null;
@@ -465,7 +496,7 @@ export class Game {
     else this.later(380, () => this.roundDone());
   }
 
-  roundDone() {
+  roundDone({ bombChip = null } = {}) {
     if (this.ended) return;
     this.roundIdx++;
     if (this.mode === 'level' && this.roundIdx >= this.cfg.rounds) {
@@ -475,10 +506,14 @@ export class Game {
     sfx.round();
     this.root.classList.remove('on-extra');
     const want = this.mode === 'endless' ? stepValue(this.cfg.bonusSteps, this.roundIdx) : this.cfg.bonus;
-    const add = applyBonus(this.timeLeft / 1000, want, this.cfg.cap);
-    this.timeLeft += add * 1000;
     this.hold('bonus');
-    if (want > 0) {
+    if (bombChip) {
+      // Zeitbombe defused: the time was filled by the bomb ("Zeit voll" / Endlos "+20 s"), no round bonus on top
+      this.flash(h('div', { class: 'bonus-layer' }, h('span', { class: 'bonus-chip' + (bombChip.capped ? ' capped' : '') }, bombChip.text)), 1400);
+      replay(this.elTimer, 'bump');
+    } else if (want > 0) {
+      const add = applyBonus(this.timeLeft / 1000, want, this.cfg.cap);
+      this.timeLeft += add * 1000;
       // only up to the limit: "+3 s · voll", or "Zeit voll" when nothing fits any more
       const capped = add < want - 0.001;
       const shown = Math.round(add);
@@ -487,6 +522,10 @@ export class Game {
       if (shown > 0) replay(this.elTimer, 'bump');
     }
     this.startRound();
+    if (bombChip) {
+      replay(this.board, 'swap-in');
+      setTimeout(() => this.board.classList.remove('swap-in'), 300);
+    }
     if (this.mode === 'endless') {
       if (!this.recordShown && this.best > 0 && this.roundIdx > this.best) {
         this.recordShown = true;
@@ -558,6 +597,7 @@ export class Game {
       this.modRevealed = true;
       this.renderDots({ mark: true });
       this.renderModUI(true);
+      if (mod === 'zeitbombe' && this.bomb) this.bomb.enter();
     });
   }
 
@@ -1184,6 +1224,42 @@ export class Game {
       cls: 'modal-fail',
       icon: { name: 'hourglass', kind: 'accent' },
       body: h('div', { class: 'modal-body' }, intro, recap, st.plus ? this.streakChip(st) : null),
+    });
+  }
+
+  /** Zeitbombe defused: next round, the time is already full (bomb.js). */
+  bombDone(chip) {
+    this.roundDone({ bombChip: chip });
+  }
+
+  /** Zeitbombe: time over. Straight to the end dialog – no list of words. */
+  bombLost(found) {
+    const pairs = t('zbPairsOf', { k: found, n: BOMB.need });
+    if (this.mode === 'endless') {
+      const summary = this.endlessSummary();
+      const st = store.countToday();
+      this.showEndModal({
+        title: t('zbBoomTitle'),
+        center: true,
+        cls: 'modal-fail',
+        icon: { name: 'zeitbombe', kind: 'zb', extra: 'big' },
+        body: h('div', { class: 'modal-body' }, summary,
+          h('p', { class: 'modal-text' }, t('zbEndlessLine', { r: this.roundIdx + 1 }) + ' · ' + pairs),
+          st.plus ? this.streakChip(st) : null),
+      });
+      return;
+    }
+    store.recordResult(this.list.id, this.level, { completed: false, timeLeft: 0, round: this.roundIdx + 1 });
+    const st = store.countToday();
+    this.showEndModal({
+      title: t('zbBoomTitle'),
+      cls: 'modal-fail',
+      icon: { name: 'zeitbombe', kind: 'zb' },
+      body: h('div', { class: 'modal-body' },
+        h('p', { class: 'modal-text', style: { color: 'var(--text)' } },
+          h('b', null, t('zbRound', { r: this.roundIdx + 1, n: this.cfg.rounds })), ' · ' + pairs),
+        h('p', { class: 'encourage' }, t('zbEncourage')),
+        st.plus ? this.streakChip(st) : null),
     });
   }
 

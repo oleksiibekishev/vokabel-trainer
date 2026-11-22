@@ -23,7 +23,7 @@ function defaults() {
     // Endlos opens for every list as soon as "Mittel" was passed in any list – and stays open
     // (also after "Fortschritt zurücksetzen" or deleting the list)
     unlocks: { endless: false },
-    settings: { lang: null, sound: true, vibrate: true, timing: {}, iosHintDismissed: false },
+    settings: { lang: null, sound: true, vibrate: true, timing: {}, iosHintDismissed: false, zeitbombe: true },
   };
 }
 

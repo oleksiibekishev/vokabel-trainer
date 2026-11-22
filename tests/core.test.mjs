@@ -7,6 +7,7 @@ import {
   encodeData, decodeData, listToShare, listFromShare, primaryForm, answerDiff, variants, allVariants, gapTargets,
   ENDLESS, MOD_TYPES, stepValue, applyBonus, komboNext, rollModifier, fitTypeToMod, placeNewPairs, wirbelOrder, trainingTypes, trainingPick,
   trainingSession, TRAINING_MAX, streakInfo, bestStreak, missedDay, weekView, monthGrid, addDays, weekday, shiftMonth,
+  BOMB, bombClock, bombLayout,
 } from '../js/core.js';
 import { BUILTIN_LISTS } from '../js/builtin-lists.js';
 
@@ -251,10 +252,12 @@ test('special rounds: from round 4, never twice in a row, limited per game, the 
   assert.ok(['pairs', 'choice'].includes(fitTypeToMod('kombo', 'gaps')));
   assert.equal(rollModifier(LEVELS.medium, 5, 'pairs', null, 0, () => 0.3), null, '25 % chance');
   // every special round equally often (Zeitraffer used to come in ~75 % of the cases)
-  const seen = { wirbel: 0, kombo: 0, zeitraffer: 0 };
-  for (let i = 0; i < 30000; i++) { const m = rollModifier(LEVELS.hard, 6, 'spell', null, 0); if (m) seen[m]++; }
-  const total = seen.wirbel + seen.kombo + seen.zeitraffer;
-  for (const k of Object.keys(seen)) assert.ok(Math.abs(seen[k] / total - 1 / 3) < 0.03, k + ': ' + (seen[k] / total).toFixed(2));
+  const seen = { wirbel: 0, kombo: 0, zeitraffer: 0, zeitbombe: 0 };
+  for (let i = 0; i < 40000; i++) { const m = rollModifier(LEVELS.hard, 6, 'spell', null, 0); if (m) seen[m]++; }
+  const total = Object.values(seen).reduce((a, b) => a + b, 0);
+  for (const k of Object.keys(seen)) assert.ok(Math.abs(seen[k] / total - 1 / 4) < 0.03, k + ': ' + (seen[k] / total).toFixed(2));
+  assert.ok(!LEVELS.easy.mods.includes('zeitbombe'), 'no Zeitbombe in Leicht');
+  assert.equal(fitTypeToMod('zeitbombe', 'spell'), 'pairs');
   // Endlos: the chance grows up to 50 %
   assert.equal(rollModifier(ENDLESS, 4, 'pairs', null, 0, () => 0.3), null);
   assert.notEqual(rollModifier(ENDLESS, 30, 'pairs', null, 99, () => 0.45), null);
@@ -342,4 +345,26 @@ test('Tagesserie: days in a row, record, week and month view', () => {
   assert.ok(d20.lit && d20.joinLeft && d20.joinRight);
   assert.ok(grid.flat().find((c) => c && c.day === 22).today);
   assert.ok(grid.flat().find((c) => c && c.day === 23).future);
+});
+
+test('Zeitbombe: clock with hundredths, board split left/right', () => {
+  assert.equal(bombClock(10000), '10,00');
+  assert.equal(bombClock(6420), '06,42');
+  assert.equal(bombClock(6421), '06,43', 'rounded up: 0,00 only when the time is really over');
+  assert.equal(bombClock(1), '00,01');
+  assert.equal(bombClock(0), '00,00');
+  assert.equal(bombClock(-50), '00,00');
+  assert.equal(BOMB.need, 5);
+  assert.ok(BOMB.minWords >= BOMB.pairs * 2, 'enough words for two full boards');
+  const ws = ['a', 'b', 'c', 'd'].map((id) => ({ id }));
+  for (let i = 0; i < 300; i++) {
+    const cells = bombLayout(ws);
+    assert.equal(cells.length, 8);
+    for (const w of ws) {
+      const idx = cells.map((c, j) => (c.w === w ? j : -1)).filter((j) => j >= 0);
+      assert.equal(idx.length, 2);
+      assert.notEqual(idx[0] % 2, idx[1] % 2, 'one tile left, one right');
+      assert.deepEqual(cells.filter((c) => c.w === w).map((c) => c.side).sort(), ['de', 'en']);
+    }
+  }
 });

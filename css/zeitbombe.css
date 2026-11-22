@@ -1,0 +1,230 @@
+/* =====================================================================
+   Zeitbombe – Spezialrunde (Testversion; nur Mittel, Schwer, Endlos)
+   Logik: js/bomb.js. Zum Zurückrollen: diese Datei, bomb.js und die Aufrufe in game.js entfernen.
+   Design „Zeitbombe Spezialrunde“. Nach style.css laden: nutzt dessen Tokens
+   (--bg, --surface2, --line2, --muted, --ok, --ok-bg, --ok-dot, --err, --err-bg,
+   --ochre, --serif, --sans), Klassen (.tile, .timer, .timebar, .dot, .mod-banner,
+   .mod-chip, .callout, .modal …) und Keyframes (pop, popIn, vanish, enter).
+   Animiert werden nur transform und opacity. Animationen laufen über
+   Variablen – „Bewegung reduzieren“ tauscht sie an einer Stelle.
+   JS setzt an .game:       --zb-dx (Weg des Timers = Mitte .zb-timer − Mitte .timer, px)
+   JS setzt an .zb-barwrap: --zb-p  (Füllstand der Zündschnur 0…1, jedes Bild)
+   ===================================================================== */
+
+/* ---------- Token: genau ein neuer Farbwert ---------- */
+:root {
+  --bomb: #3E434A;               /* Graphit · 9,5:1 auf bg · 10,0:1 auf surface · 8,6:1 auf surface2 */
+  --bomb-badge: var(--bomb);     /* Ableitungen – keine neuen Farben */
+  --bomb-badge-ink: var(--bg);
+  --bomb-spark: var(--ochre);    /* Funke: Illustrationsfarbe, trägt nie allein Bedeutung */
+  --zb-k: 1.444;                 /* Timer 36 px → 52 px */
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bomb: #BEC4CC;             /* Stahl · 8,6:1 auf bg · 7,5:1 auf surface · 6,2:1 auf surface2 */
+    --bomb-badge: var(--bg);
+    --bomb-badge-ink: var(--bomb);
+  }
+}
+
+/* ---------- Animationsnamen ---------- */
+:root {
+  --zb-a-hide: zbHide; --zb-a-show: zbShow;
+  --zb-a-timer-out: zbTimerOut; --zb-a-timer-in: zbTimerIn; --zb-a-timer-back: zbTimerBack; --zb-a-timer-home: zbTimerHome;
+  --zb-a-fill: zbFill; --zb-a-burn: zbBurn; --zb-a-flicker: zbFlicker; --zb-a-snuff: zbSnuff; --zb-a-smoke: zbSmoke;
+  --zb-a-pip: popIn; --zb-a-wave: zbWave; --zb-a-cover: zbFadeOut; --zb-a-word: zbFadeIn;
+  --zb-a-ok: pop; --zb-a-gone: vanish; --zb-a-new: enter; --zb-a-wrong: zbShake; --zb-a-clunk: zbClunk; --zb-a-dim: zbDim;
+  --zb-a-beat: zbBeat; --zb-a-jolt: zbJolt; --zb-a-fall: zbFall;
+}
+/* Ohne Bewegung: nur Ein- und Ausblenden. Der Zeitbalken läuft weiter – er ist Information. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --zb-a-hide: zbFadeOut; --zb-a-show: zbFadeIn;
+    --zb-a-timer-out: zbFadeOut; --zb-a-timer-in: zbFadeIn; --zb-a-timer-back: zbFadeOut; --zb-a-timer-home: zbFadeIn;
+    --zb-a-fill: none; --zb-a-flicker: none; --zb-a-snuff: zbFadeOut; --zb-a-smoke: none;
+    --zb-a-pip: zbFadeIn; --zb-a-wave: none;
+    --zb-a-ok: none; --zb-a-gone: zbFadeOut; --zb-a-new: zbFadeIn; --zb-a-wrong: none; --zb-a-clunk: none;
+    --zb-a-beat: none; --zb-a-jolt: none; --zb-a-fall: zbFadeOut;
+  }
+  /* style.css setzt .tile dort mit !important auf fadeIn – für die Bombe gezielt überschreiben */
+  .zb-tile { animation: none !important; }
+  .zb-tile.new { animation: zbFadeIn .2s ease var(--d, 0ms) both !important; }
+  .zb-tile.gone, .zb-board.swap-out .zb-tile { animation: zbFadeOut .16s ease forwards !important; }
+  .zb-board.locked .zb-tile:not(.wrong) { animation: zbDim 1s linear both !important; }
+  .zb-board.zb-blast .zb-tile { animation: zbFadeOut .2s ease calc(200ms + var(--k, 0) * 60ms) both !important; }
+}
+
+/* ---------- Gerüst ---------- */
+.zb .game-top, .zb .status-row, .zb-barwrap { position: relative; }
+.zb .timer { transform-origin: 50% 50%; }
+.icon.zb-ic { stroke-width: 2; }
+.zb-ic-spark { transform-box: fill-box; transform-origin: 50% 50%; }
+
+/* nur im Bombenmodus sichtbar */
+.zb-timer, .zb-pips, .zb-spark-run { opacity: 0; visibility: hidden; pointer-events: none; }
+.zb-fillwrap { position: absolute; inset: 0; opacity: 0; }
+
+/* Bombenmodus: alles außer dem Timer verschwindet – auch „ד, also keine Pause per Tipp */
+.zb-mode .game-top > .icon-btn, .zb-mode .game-info, .zb-mode .timer, .zb-mode .time-slot,
+.zb-mode .dots, .zb-mode .status-end, .zb-mode .task-row { opacity: 0; visibility: hidden; pointer-events: none; }
+.zb-mode .zb-timer, .zb-mode .zb-pips, .zb-mode .zb-spark-run { opacity: 1; visibility: visible; }
+.zb-mode .zb-fillwrap { opacity: 1; }
+.zb-mode .timebar-fill { opacity: 0; }
+
+/* ---------- Übergang rein (≤ 400 ms) ---------- */
+.zb-mode.zb-enter .game-top > .icon-btn, .zb-mode.zb-enter .game-info, .zb-mode.zb-enter .time-slot,
+.zb-mode.zb-enter .dots, .zb-mode.zb-enter .status-end, .zb-mode.zb-enter .task-row { visibility: visible; animation: var(--zb-a-hide) .16s ease-in both; }
+.zb-mode.zb-enter .timer { visibility: visible; animation: var(--zb-a-timer-out) .32s cubic-bezier(.2, .8, .2, 1) both; }
+.zb-mode.zb-enter .zb-timer { animation: var(--zb-a-timer-in) .32s cubic-bezier(.2, .8, .2, 1) both; }
+.zb-mode.zb-enter .timebar-fill { animation: zbFadeOut .12s ease-in both; }
+.zb-mode.zb-enter .zb-pip { animation: var(--zb-a-pip) .18s cubic-bezier(.3, 1.4, .5, 1) calc(140ms + var(--i, 0) * 20ms) both; }
+.zb-mode.zb-enter .zb-spark-run { animation: zbFadeIn .16s ease-out .24s both; }
+.zb-mode.zb-enter .zb-fill, .zb-refill .zb-fill { animation: var(--zb-a-fill) .32s cubic-bezier(.2, .8, .2, 1) 40ms both; }
+
+/* ---------- Übergang zurück (≤ 400 ms) ---------- */
+.zb-exit .game-top > .icon-btn, .zb-exit .game-info, .zb-exit .time-slot,
+.zb-exit .dots, .zb-exit .status-end, .zb-exit .task-row { animation: var(--zb-a-show) .2s ease-out .16s both; }
+.zb-exit .timer { animation: var(--zb-a-timer-home) .32s cubic-bezier(.2, .8, .2, 1) both; }
+.zb-exit .zb-timer { visibility: visible; animation: var(--zb-a-timer-back) .32s cubic-bezier(.2, .8, .2, 1) both; }
+.zb-exit .zb-pips { visibility: visible; animation: zbFadeOut .16s ease-in both; }
+.zb-exit .zb-fillwrap { animation: zbFadeOut .12s ease-in both; }
+.zb-exit .timebar-fill { animation: zbFadeIn .12s ease-out both; } /* --p geht per Transition (400 ms) auf voll */
+
+/* ---------- Timer: Sekunden mit Hundertsteln ---------- */
+.zb-timer {
+  position: absolute; z-index: 1; top: 50%; left: 10px; right: 0; /* .game-top hat margin-left −10px → Bildschirmmitte */
+  width: 160px; height: 56px; margin: -28px auto 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 52px; font-weight: 500; line-height: 1;
+  font-variant-numeric: tabular-nums; color: var(--bomb);
+}
+.zb-num { display: block; width: 128px; text-align: center; contain: layout paint; } /* feste Breite: nichts springt */
+.zb-unit { position: absolute; right: 4px; bottom: 11px; font-family: var(--sans); font-size: 16px; font-weight: 600; color: var(--muted); }
+
+/* letzte 3 s: nur Farbwechsel auf Rot, dazu der Schlag (Puls) */
+.zb-alarm .zb-timer { color: var(--err); animation: var(--zb-a-beat) .5s ease-out infinite; }
+.zb-alarm .zb-unit { color: var(--err); }
+.zb-alarm .timebar { background: var(--err-bg); }
+.zb-alarm .zb-fill { background: var(--err); }
+
+/* entschärft: nur Farbwechsel auf Grün, Funke aus */
+.zb-defused .zb-timer { color: var(--ok); animation: none; }
+.zb-defused .zb-unit { color: var(--ok); }
+.zb-defused .zb-spark { animation: var(--zb-a-snuff) .2s ease-in both; }
+.zb-defused .zb-smoke i { animation: var(--zb-a-smoke) .52s ease-out var(--d, 0ms) both; }
+.zb-defused .zb-pip { animation: var(--zb-a-wave) .32s ease-out calc(120ms + var(--i, 0) * 40ms) both; }
+
+/* Pause (App versteckt) und Explosion: alles steht */
+.paused .zb-timer { color: var(--muted); animation: none; }
+.paused .zb-fill, .paused .zb-spark-run { animation-play-state: paused; }
+.paused .zb-spark, .zb-dead .zb-spark, .zb-dead .zb-timer { animation: none; }
+.zb-dead .zb-spark-run { opacity: 0; }
+
+/* ---------- Zeitbalken = Zündschnur ---------- */
+.zb-fill { position: absolute; inset: 0; border-radius: 3px; background: var(--bomb); transform: translateX(-100%); }
+.zb-mode .zb-fill, .zb-mode .zb-spark-run { transform: translateX(calc((var(--zb-p, 1) - 1) * 100%)); }
+.zb-exit .zb-fill { transform: translateX(calc((var(--zb-p, 1) - 1) * 100%)); } /* Stand halten, während er ausblendet */
+.zb-spark-run { position: absolute; left: 0; right: 0; bottom: 0; height: 6px; }
+.zb-spark {
+  position: absolute; right: -6px; top: -3px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--bomb-spark); box-shadow: 0 0 0 2px var(--bg);
+  animation: var(--zb-a-flicker) .18s ease-in-out infinite alternate;
+}
+.zb-smoke { position: absolute; right: -6px; top: -8px; width: 12px; height: 12px; }
+.zb-smoke i { position: absolute; inset: 2px; border-radius: 50%; background: var(--muted); opacity: 0; }
+.zb-smoke i:nth-child(2) { --d: 70ms; --sx: -6px; }
+.zb-smoke i:nth-child(3) { --d: 140ms; --sx: 6px; }
+
+/* ---------- 5 Indikatoren (im Platz der Rundenpunkte) ---------- */
+.zb-pips { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.zb-pip {
+  flex: none; width: 20px; height: 20px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--line2);
+  color: var(--bg); display: flex; align-items: center; justify-content: center;
+}
+.zb-pip:nth-child(2) { --i: 1; } .zb-pip:nth-child(3) { --i: 2; } .zb-pip:nth-child(4) { --i: 3; } .zb-pip:nth-child(5) { --i: 4; }
+.zb-pip .icon { width: 12px; height: 12px; stroke-width: 3.2; opacity: 0; }
+.zb-pip.on { background: var(--ok-dot); box-shadow: none; }  /* Form: Ring → gefüllt mit ✓ */
+.zb-pip.on .icon { opacity: 1; }
+.zb-pip.new { animation: var(--zb-a-pip) .3s cubic-bezier(.3, 1.4, .5, 1) both; }
+
+/* ---------- Feld 4 × 2 ---------- */
+.zb-board {
+  position: relative; flex: 1; min-height: 0; max-height: 500px; margin-top: auto;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(4, minmax(76px, 1fr)); gap: 10px;
+}
+/* Ende der Runde (entschärft) */
+.board.zb-out .zb-board { animation: zbFadeOut .16s ease-in both; }
+/* nach je 2 Paaren: alle Plättchen gehen, 4 neue Paare kommen (die Zeit wartet so lange) */
+.zb-board.swap-out .zb-tile, .zb-board.swap-out .zb-slot { animation: var(--zb-a-gone) .16s ease-in forwards; pointer-events: none; }
+.zb-board.swap-in { animation: zbFadeIn .2s ease-out both; }  /* Neustart nach Pause: neue, verdeckte Wörter */
+.zb-tile { min-height: 76px; padding: 8px 12px; font-size: 18px; line-height: 1.2; animation: none; }
+.zb-word { display: block; }
+.zb-tile.done { animation: var(--zb-a-ok) .22s ease-out; pointer-events: none; }
+.zb-tile.gone { animation: var(--zb-a-gone) .2s ease-in forwards; pointer-events: none; }
+.zb-tile.new { animation: var(--zb-a-new) .24s cubic-bezier(.2, .8, .2, 1) var(--d, 0ms) both; }
+.zb-tile.wrong { animation: var(--zb-a-wrong) .32s ease-in-out; }
+.zb-slot { border-radius: 12px; border: 1.5px dashed var(--line2); }  /* frei bis zum Nachschub */
+
+/* verdeckt: Wörter sind noch nicht im DOM, nur zwei Balken */
+.zb-cover {
+  position: absolute; inset: -1px; z-index: 1; border-radius: inherit; background: var(--surface2);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+}
+.zb-cover i { display: block; width: 58%; height: 10px; border-radius: 5px; background: var(--line2); }
+.zb-cover i + i { width: 36%; }
+.zb-reveal .zb-cover { animation: var(--zb-a-cover) .16s ease-in both; }
+.zb-reveal .zb-word { animation: var(--zb-a-word) .16s ease-out 80ms both; }
+
+/* Fehler: 1 s gesperrt – nur die Plättchen zeigen es (2 rot mit ✗ zucken, Feld ruckt, Rest gedimmt), Zeit läuft weiter */
+.zb-board.locked { pointer-events: none; animation: var(--zb-a-clunk) .14s ease-out; }
+.zb-board.locked .zb-tile:not(.wrong), .zb-board.locked .zb-slot { animation: var(--zb-a-dim) 1s linear both; }
+
+/* ---------- Banner, Chip, Punkt, Legende, Dialog-Icon ---------- */
+.mod-zeitbombe { --mod: var(--bomb); --mod-ink: var(--bomb); --mod-soft: var(--surface2); }
+.mod-zeitbombe .mod-badge, .legend-icon.mod-zeitbombe, .modal-icon.zb { background: var(--bomb-badge); color: var(--bomb-badge-ink); }
+.mod-zeitbombe .mod-badge .zb-ic-spark, .modal-icon.zb .zb-ic-spark { stroke: var(--bomb-spark); animation: var(--zb-a-flicker) .18s ease-in-out infinite alternate; }
+.mod-badge.zb-lg { width: 64px; height: 64px; border-radius: 18px; }
+.mod-badge.zb-lg .icon { width: 32px; height: 32px; }
+.dot.zb-dot { --mod: var(--bomb); --mod-soft: var(--surface2); position: relative; }
+.dot.zb-dot.cur::after { /* Funke an der oberen Spitze der Raute */
+  content: ""; position: absolute; left: -4px; top: -4px; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--bomb-spark); box-shadow: 0 0 0 1.5px var(--bg);
+}
+.callout-layer.zb { top: 108px; }
+.callout.zb-defused { background: var(--ok-bg); color: var(--ok); }
+.st-note.zb-note .icon { color: var(--bomb); }
+
+/* ---------- Explosion ohne Grafik: Plättchen zucken (Trägheit), dann fallen sie nacheinander (≤ 1,1 s, dann Dialog) ---------- */
+.game.zb-dead { overflow: clip; }  /* fallende Plättchen erzeugen keine Scrollfläche */
+.zb-board.zb-blast { pointer-events: none; }
+/* Reihenfolge: unten zuerst, im Zickzack – JS darf --k auch selbst setzen */
+.zb-board.zb-blast > :nth-child(8) { --k: 0; } .zb-board.zb-blast > :nth-child(7) { --k: 1; }
+.zb-board.zb-blast > :nth-child(5) { --k: 2; } .zb-board.zb-blast > :nth-child(6) { --k: 3; }
+.zb-board.zb-blast > :nth-child(4) { --k: 4; } .zb-board.zb-blast > :nth-child(3) { --k: 5; }
+.zb-board.zb-blast > :nth-child(1) { --k: 6; } .zb-board.zb-blast > :nth-child(2) { --k: 7; }
+.zb-board.zb-blast .zb-tile {  /* --fr (±10…18°) und --fx (±10…18 px) setzt JS zufällig je Plättchen */
+  animation: var(--zb-a-jolt) .2s ease-in-out both, var(--zb-a-fall) .44s cubic-bezier(.55, 0, 1, .45) calc(200ms + var(--k, 0) * 60ms) forwards;
+}
+.zb-board.zb-blast .zb-slot { animation: zbFadeOut .2s ease-in both; }
+
+/* ---------- Keyframes ---------- */
+@keyframes zbFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes zbFadeOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes zbHide { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-4px); } }
+@keyframes zbShow { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes zbTimerOut { 0% { opacity: 1; transform: none; } 35% { opacity: 1; } 70% { opacity: 0; } 100% { opacity: 0; transform: translateX(var(--zb-dx, -140px)) scale(var(--zb-k)); } }
+@keyframes zbTimerIn { 0% { opacity: 0; transform: translateX(calc(var(--zb-dx, -140px) * -1)) scale(calc(1 / var(--zb-k))); } 35% { opacity: 0; } 70% { opacity: 1; } 100% { opacity: 1; transform: none; } }
+@keyframes zbTimerBack { 0% { opacity: 1; transform: none; } 30% { opacity: 1; } 65% { opacity: 0; } 100% { opacity: 0; transform: translateX(calc(var(--zb-dx, -140px) * -1)) scale(calc(1 / var(--zb-k))); } }
+@keyframes zbTimerHome { 0% { opacity: 0; transform: translateX(var(--zb-dx, -140px)) scale(var(--zb-k)); } 30% { opacity: 0; } 65% { opacity: 1; } 100% { opacity: 1; transform: none; } }
+@keyframes zbFill { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes zbBurn { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+@keyframes zbFlicker { from { opacity: .85; transform: scale(.78); } to { opacity: 1; transform: scale(1.12); } }
+@keyframes zbSnuff { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(.2); } }
+@keyframes zbSmoke { 0% { opacity: .5; transform: translate(0, 0) scale(.6); } 100% { opacity: 0; transform: translate(var(--sx, 0px), -18px) scale(1.8); } }
+@keyframes zbWave { 0%, 100% { transform: none; } 40% { transform: translateY(-4px) scale(1.15); } }
+@keyframes zbShake { 0%, 100% { transform: none; } 20% { transform: translateX(-5px); } 45% { transform: translateX(5px); } 70% { transform: translateX(-3px); } 85% { transform: translateX(2px); } }
+@keyframes zbClunk { 0%, 100% { transform: none; } 35% { transform: translateY(3px); } 70% { transform: translateY(-1px); } }
+@keyframes zbDim { 0% { opacity: 1; } 10%, 88% { opacity: .45; } 100% { opacity: 1; } }
+@keyframes zbBeat { 0% { transform: scale(1); } 30% { transform: scale(1.07); } 100% { transform: scale(1); } }
+@keyframes zbJolt { 0%, 100% { transform: none; } 25% { transform: translate(calc(var(--fx, 0px) * -.2), -3px) rotate(calc(var(--fr, 0deg) * -.2)); } 55% { transform: translate(calc(var(--fx, 0px) * .15), 2px) rotate(calc(var(--fr, 0deg) * .15)); } 80% { transform: rotate(calc(var(--fr, 0deg) * -.06)); } }
+@keyframes zbFall { 0% { opacity: 1; transform: none; } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--fx, 0px), 760px) rotate(var(--fr, 0deg)); } }

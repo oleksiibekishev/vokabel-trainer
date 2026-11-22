@@ -501,6 +501,71 @@ async function main() {
   await page.locator('.modal .btn', { hasText: 'Beenden' }).click();
   await page.waitForSelector('.home');
 
+  // ---------- 8c2. Zeitbombe (Mittel, test version): 5 pairs in 10 s, new board after every 2 ----------
+  await page.evaluate(() => { window.__vtMods = { 4: 'zeitbombe' }; });
+  await page.locator('.level-card.level-medium').click();
+  await page.waitForSelector('.tile');
+  for (let r = 1; r <= 3; r++) {
+    await playRound();
+    await page.waitForFunction((rr) => document.querySelector('.game-round').textContent.startsWith('Runde ' + rr), r + 1);
+  }
+  await page.waitForSelector('.mod-banner.mod-zeitbombe');
+  assert.equal(await page.locator('.zb-tile').count(), 8, '4 × 2 board');
+  assert.equal(await page.locator('.zb-cover').count(), 8, 'words covered during the banner');
+  await page.waitForFunction(() => window.__vtGame.bomb.state === 'run');
+  assert.equal(await page.locator('.game-top > .icon-btn').evaluate((e) => getComputedStyle(e).visibility), 'hidden', 'no × (no pause) in the bomb');
+  const mainZ = await page.evaluate(() => window.__vtGame.timeLeft);
+  const zbPairs = () => page.evaluate(() => {
+    const by = {};
+    [...document.querySelectorAll('.zb-board .zb-tile')].forEach((el, i) => { if (!el.classList.contains('done')) (by[el.dataset.wid] = by[el.dataset.wid] || []).push(i); });
+    return by;
+  });
+  async function zbSolveOne() {
+    const by = await zbPairs();
+    const ids = Object.values(by).find((x) => x.length === 2);
+    const n = await page.evaluate(() => window.__vtGame.bomb.matched);
+    const hs = await page.locator('.zb-board .zb-tile').elementHandles();
+    await hs[ids[0]].click();
+    await hs[ids[1]].click();
+    await page.waitForFunction((k) => window.__vtGame.bomb.matched > k, n);
+    await page.waitForFunction(() => !window.__vtGame.bomb.swapping);
+  }
+  // a wrong pair: the board is locked for a moment, the game goes on
+  {
+    const by = await zbPairs();
+    const sides = await page.locator('.zb-board .zb-tile').evaluateAll((els) => els.map((e) => e.dataset.side));
+    const ws = Object.keys(by);
+    let a = null; let b = null;
+    for (const x of ws) for (const y of ws) if (x !== y) for (const i of by[x]) for (const j of by[y]) if (i % 2 !== j % 2 && sides[i] !== sides[j]) { a = i; b = j; }
+    const hs = await page.locator('.zb-board .zb-tile').elementHandles();
+    await hs[a].click();
+    await hs[b].click();
+    assert.ok(await page.locator('.zb-board.locked').count(), 'locked after a wrong pair');
+    assert.equal(await page.locator('.modal').count(), 0, 'a wrong pair does not end the game');
+    await page.waitForFunction(() => !document.querySelector('.zb-board.locked'), null, { timeout: 1600 });
+  }
+  const firstWids = Object.keys(await zbPairs()).sort();
+  await zbSolveOne();
+  await zbSolveOne();
+  const nextWids = Object.keys(await zbPairs()).sort();
+  assert.equal(nextWids.length, 4, 'after 2 pairs: a new board with 4 pairs');
+  assert.ok(nextWids.every((w) => !firstWids.includes(w)), 'all words are new');
+  await shot(page, '24b-zeitbombe');
+  // a pause starts the bomb again with new words
+  await page.evaluate(() => window.__vtGame.showPause(false));
+  await page.waitForSelector('.modal .zb-note');
+  await page.locator('.modal .btn.primary').click();
+  await page.waitForFunction(() => window.__vtGame.bomb.state === 'run' && window.__vtGame.bomb.matched === 0);
+  for (let i = 0; i < 5; i++) await zbSolveOne();
+  await page.waitForFunction(() => document.querySelector('.game-round').textContent.startsWith('Runde 5'));
+  assert.equal(await page.evaluate(() => Math.round(window.__vtGame.timeLeft / 1000)), 40, 'defused: the time is full (Mittel 40 s)');
+  assert.ok(mainZ <= 40000);
+  assert.equal(await page.locator('.bonus-chip').textContent(), 'Zeit voll');
+  assert.ok(await page.locator('.dot.zb-dot.done').count(), 'the round dot shows the bomb');
+  await page.locator('.game-top .icon-btn').click();
+  await page.locator('.modal .btn', { hasText: 'Beenden' }).click();
+  await page.waitForSelector('.home');
+
   // ---------- 8d. Endlos: open since "Mittel" was passed, no limit, smaller bonus from round 11 ----------
   await page.evaluate(() => { window.__vtMods = 'off'; });
   assert.ok(!(await page.locator('.mode-card.mode-endless').isDisabled()), 'Endlos is open after Mittel');

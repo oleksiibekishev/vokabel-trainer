@@ -61,6 +61,7 @@ const ICONS = {
   kombo: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
   zeitraffer: '<path d="M13 19 22 12 13 5z"/><path d="M2 19 11 12 2 5z"/>',
   extra: '<path d="M21 12.5A9 9 0 1 0 12.5 21"/><path d="M12 7v5l3 2"/><path d="M19 15v6"/><path d="M16 18h6"/>',
+  zeitbombe: '<circle cx="11" cy="13" r="9"/><path d="M14.35 4.65 16.3 2.7a2.41 2.41 0 0 1 3.4 0l1.6 1.6a2.4 2.4 0 0 1 0 3.4l-1.95 1.95"/><path class="zb-ic-spark" d="m22 2-1.5 1.5"/>',
   limit: '<path d="M3.34 19a10 10 0 1 1 17.32 0"/><path d="m12 14 6 3"/><circle cx="12" cy="14" r="1"/>',
   endless: '<path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z"/>',
   training: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
@@ -75,7 +76,7 @@ export function icon(name, cls = '') {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('class', 'icon' + (FILLED.has(name) ? ' filled' : '') + (cls ? ' ' + cls : ''));
+  svg.setAttribute('class', 'icon' + (FILLED.has(name) ? ' filled' : '') + (name === 'zeitbombe' ? ' zb-ic' : '') + (cls ? ' ' + cls : ''));
   svg.innerHTML = ICONS[name] || '';
   return svg;
 }
@@ -244,6 +245,27 @@ export const sfx = {
   /** Kombo step: the tone rises with the multiplier. */
   kombo(mult) {
     if (store.settings().sound) tone(660 + mult * 110, 0.1, 'triangle', 0.04, 0.09);
+  },
+  /** Zeitbombe: a wrong pair (softer than a real mistake, the game goes on). */
+  bump() {
+    if (store.settings().sound) tone(200, 0.16, 'square', 0, 0.045);
+    if (store.settings().vibrate && navigator.vibrate) navigator.vibrate(50);
+  },
+  /** Zeitbombe: one tick per second in the last 3 seconds. */
+  tick() {
+    if (store.settings().sound) tone(1250, 0.05, 'square', 0, 0.04);
+  },
+  boom() {
+    if (store.settings().sound) {
+      tone(90, 0.5, 'sawtooth', 0, 0.09);
+      tone(60, 0.6, 'square', 0.05, 0.07);
+      tone(140, 0.25, 'triangle', 0, 0.06);
+    }
+    if (store.settings().vibrate && navigator.vibrate) navigator.vibrate([120, 50, 220]);
+  },
+  defuse() {
+    if (!store.settings().sound) return;
+    [784, 988, 1319].forEach((f, i) => tone(f, 0.14, 'triangle', i * 0.08, 0.09));
   },
   win() {
     if (!store.settings().sound) return;

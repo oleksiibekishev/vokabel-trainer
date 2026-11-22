@@ -7,7 +7,7 @@ import {
 import { Game } from './game.js';
 import * as streakUI from './streak.js';
 
-export const APP_VERSION = '1.7.1';
+export const APP_VERSION = '1.8.0';
 
 const app = document.getElementById('app');
 let game = null;
@@ -128,7 +128,7 @@ function levelStates(list) {
 }
 
 /** Start a game: the start screen fades out, the game fades in, its parts one after another. */
-async function startGame({ level, focus = [], fromGame = false } = {}) {
+async function startGame({ level, focus = [], fromGame = false, forceMods = null } = {}) {
   const list = store.currentList();
   const allowed = list && list.words.length >= MIN_WORDS && (
     level === 'endless' ? store.endlessUnlocked()
@@ -153,7 +153,7 @@ async function startGame({ level, focus = [], fromGame = false } = {}) {
   app.replaceChildren(root);
   window.scrollTo(0, 0);
   game = new Game({
-    root, list, level, focus,
+    root, list, level, focus, forceMods,
     onMenu: () => { game = null; goBack(); },
     onNextLevel: (lvl) => show('game', { level: lvl, fromGame: true }),
     onTrain: (ids) => show('game', { level: 'training', focus: ids, fromGame: true }),
@@ -354,6 +354,7 @@ function legend() {
       item('mod-wirbel', 'wirbel', t('mod_wirbel'), t('legend_wirbel')),
       item('mod-kombo', 'kombo', t('mod_kombo'), t('legend_kombo')),
       item('mod-zeitraffer', 'zeitraffer', t('mod_zeitraffer'), t('legend_zeitraffer')),
+      store.settings().zeitbombe !== false ? item('mod-zeitbombe', 'zeitbombe', t('mod_zeitbombe'), t('legend_zeitbombe')) : null,
       item('tone-extra', 'extra', t('extraTime'), t('legend_extra')),
       item('', 'limit', t('limitName'), t('legend_limit'))));
 }
@@ -624,6 +625,20 @@ function renderSettings() {
       }, l.label)))),
     switchRow(t('sound'), 'sound'),
     'vibrate' in navigator ? switchRow(t('vibration'), 'vibrate', t('vibrationHint')) : null));
+
+  // test version of the Zeitbombe: switch it off, or play it right away
+  const zbOn = store.settings().zeitbombe !== false;
+  const cur = store.currentList();
+  const canTry = zbOn && cur && cur.words.length >= 8 && store.isUnlocked(cur.id, 'medium');
+  wrap.appendChild(h('section', { class: 'card settings-card' },
+    h('h2', { class: 'card-title', style: { fontSize: '20px', margin: '14px 0 2px' } }, t('testFeatures')),
+    switchRow(t('zbSetting'), 'zeitbombe', t('zbSettingHint')),
+    zbOn ? h('div', { class: 'set-row' },
+      h('span', { class: 'set-label' }, t('zbTry'), h('small', null, canTry ? t('zbTryHint') : t('zbTryLocked'))),
+      h('button', {
+        class: 'btn outline', type: 'button', disabled: !canTry, style: { flex: 'none', height: '44px', padding: '0 14px' },
+        onclick: () => navigate('game', { level: 'medium', forceMods: { 1: 'zeitbombe' } }),
+      }, icon('zeitbombe'), t('zbTryShort'))) : null));
 
   const timingCells = [
     h('span'), h('span', { class: 'timing-head' }, t('startTime')), h('span', { class: 'timing-head' }, t('bonusTime')),

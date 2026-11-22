@@ -32,6 +32,9 @@ Jede Runde ab Runde 4 wird mit 25 % zur Spezialrunde, nie zwei hintereinander. H
 | Wirbel | Paare | Nach 3 richtigen Paaren verschwinden sie, an ihrer Stelle kommen 3 neue (9 statt 6 Paare, keine Extrazeit); danach wirbeln alle Kärtchen auf neue Plätze (Leicht: innerhalb ihrer Spalte, sonst bleibt jedes Paar links/rechts geteilt). Während der Animation steht die Zeit. |
 | Kombo | Paare, Auswahl | Schnelle richtige Antworten hintereinander (auch die erste, ab Rundenbeginn): ×2 = +5 s, ×3 = +10 s, ×4 = +15 s, ×5 = +20 s. Diese Sekunden sind **Extrazeit** über dem Limit; sie wird erst benutzt, wenn die normale Zeit abgelaufen ist. Schnell = höchstens 3,5 s (Leicht), 3 s (Mittel), 2,5 s (Schwer) nach der letzten Antwort. |
 | Zeitraffer | alle (ab Mittel) | Die Zeit läuft 1,5× so schnell. |
+| Zeitbombe (Test) | eigenes Feld (ab Mittel) | 5 Paare in 10 s auf einem Feld mit 4 × 2 Kärtchen. Nach je 2 gefundenen Paaren kommen 4 ganz neue Paare (die Zeit wartet so lange, ~0,4 s). Ein falsches Paar sperrt das Feld 1 s, die Zeit läuft weiter. Geschafft: Zeit wieder voll (Mittel 40 s, Schwer 30 s; Endlos +20 s statt des Rundenbonus). Zeit abgelaufen: Spielende, ohne Wortliste. Keine Pause; wird die App weggeklickt, startet die Bombe danach mit neuen Wörtern neu. Nur bei Listen mit mindestens 8 Wörtern. |
+
+**Zeitbombe ist eine Testversion:** In den Einstellungen unter „Testfunktionen“ lässt sie sich abschalten oder mit „Zeitbombe ausprobieren“ sofort spielen (Mittel, Bombe in Runde 1). Zurückrollen: Branch `stabil-1.7.0` ist der Stand davor; im Code steckt die Runde in `js/bomb.js` und `css/zeitbombe.css`.
 
 ### Weitere Modi
 
@@ -71,7 +74,7 @@ Warmer, ruhiger Stil: Ivory-Hintergrund, dunkle Hauptbuttons, Clay (`#D97757`) n
 
 Systemleisten der installierten App: `theme_color` und `background_color` im Manifest sind dunkel (`#262624`). Chrome färbt damit die Navigationsleiste und den Fensterhintergrund (sichtbar z. B. beim Öffnen der Tastatur) – im Manifest gibt es nur eine Farbe für beide Modi. Installierte Apps übernehmen Manifest-Änderungen erst beim nächsten WebAPK-Update (bis ~1 Tag) oder nach Neuinstallation.
 
-Spezialrunden: Wirbel in Clay, Kombo und Extrazeit in Blau (`--extra` `#2A65A8`), Zeitraffer in Violett (`--rush` `#8E5FD0`, gestreifter Zeitbalken). Eine Spezialrunde ist in der Punktreihe eine Raute. Bei „Bewegung reduzieren“ gibt es statt Bewegung nur Ein- und Ausblenden.
+Spezialrunden: Wirbel in Clay, Kombo und Extrazeit in Blau (`--extra` `#2A65A8`), Zeitraffer in Violett (`--rush` `#8E5FD0`, gestreifter Zeitbalken), Zeitbombe in Graphit (`--bomb` `#3E434A`, dunkel Stahl `#BEC4CC`; der Zeitbalken wird zur Zündschnur, Timer mit Hundertsteln in der Mitte). Eine Spezialrunde ist in der Punktreihe eine Raute. Bei „Bewegung reduzieren“ gibt es statt Bewegung nur Ein- und Ausblenden.
 
 Schriften (selbst gehostet in `fonts/`, SIL Open Font License): Source Serif 4 (Titel, Timer), Manrope (Text), JetBrains Mono (Lücken, Buchstabenvergleich). Icons: Lucide (ISC-Lizenz).
 
@@ -82,11 +85,12 @@ Reines HTML/CSS/JavaScript ohne Build-Schritt.
 - `js/core.js` – Logik (Parser, Antwortprüfung, Wortauswahl), ohne DOM
 - `js/game.js` – Spielablauf und die 4 Minispiele
 - `js/streak.js` – Tagesserie: Zähler, Kachel, Kalender
+- `js/bomb.js` + `css/zeitbombe.css` – Spezialrunde Zeitbombe (Testversion)
 - `js/main.js` – Bildschirme (Start, Listen, Wörter, Einstellungen)
 - `js/builtin-lists.js` – Listen, die alle automatisch bekommen
 - `sw.js` – Offline-Cache
 
-Im Test lassen sich Spezialrunden mit `window.__vtMods = 'off'` abschalten oder mit `window.__vtMods = { 4: 'wirbel' }` erzwingen.
+Im Test lassen sich Spezialrunden mit `window.__vtMods = 'off'` abschalten oder mit `window.__vtMods = { 4: 'wirbel' }` (auch `'zeitbombe'`) erzwingen.
 
 **Neue Version veröffentlichen:** `VERSION` in `sw.js` und `APP_VERSION` in `js/main.js` erhöhen, sonst bekommen installierte Apps die Änderung nicht.
 
