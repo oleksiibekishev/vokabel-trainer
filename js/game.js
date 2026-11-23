@@ -45,7 +45,7 @@ function replay(el, cls) {
  * 'endless' (rounds without end) or 'training' (Fehlertraining: words with mistakes, no timer).
  */
 export class Game {
-  constructor({ root, list, level, onMenu, onNextLevel, onTrain, focus = [], forceMods = null }) {
+  constructor({ root, list, level, onMenu, onNextLevel, onTrain, focus = [] }) {
     this.root = root;
     this.list = list;
     this.level = level;
@@ -59,12 +59,13 @@ export class Game {
     if (this.mode === 'endless') this.cfg = { ...ENDLESS };
     else if (this.mode === 'training') this.cfg = { timer: false, mixed: true, gapRatio: 0.35, keepFirst: true };
     else this.cfg = { ...LEVELS[level], ...store.timing(level) };
+    // tests: other times for a level (window.__vtTiming = { easy: { start: 10 } })
+    const vt = typeof window !== 'undefined' && window.__vtTiming && window.__vtTiming[level];
+    if (vt) { Object.assign(this.cfg, vt); if (vt.start && !vt.cap) this.cfg.cap = Math.max(this.cfg.cap, vt.start); }
     // Zeitbombe (test version): can be switched off in the settings and needs at least 8 words
     if (this.cfg.mods && (store.settings().zeitbombe === false || this.words.length < BOMB.minWords)) {
       this.cfg.mods = this.cfg.mods.filter((m) => m !== 'zeitbombe');
     }
-    // "Zeitbombe ausprobieren": a special round forced into a round ({ 1: 'zeitbombe' })
-    this.forceMods = forceMods;
     this.bomb = null;
     this.capMs = (this.cfg.cap || 0) * 1000;
     // tests can switch special rounds off ('off') or force them ({ 4: 'wirbel' })
@@ -387,7 +388,6 @@ export class Game {
   pickMod(round, type) {
     const tm = this.testMods;
     if (tm !== undefined) return tm && typeof tm === 'object' ? tm[round] || null : null;
-    if (this.forceMods && this.forceMods[round]) return this.forceMods[round];
     return rollModifier(this.cfg, round, type, this.roundMods[this.roundIdx - 1] || null, this.modCount);
   }
 
@@ -657,8 +657,8 @@ export class Game {
     }
   }
 
-  /** A right answer in a Kombo round. */
-  komboHit() {
+  /** A right answer in a Kombo round. els: the tiles/option of this answer – they glow blue when a step is earned. */
+  komboHit(els = []) {
     if (this.mod !== 'kombo') return;
     const k = this.kombo;
     const fast = this.playMs - k.last <= this.cfg.kombo;
@@ -672,6 +672,23 @@ export class Game {
       this.extraLagUntil = performance.now() + 560;
       sfx.kombo(k.mult);
       this.flyChip('+' + r.gain + ' s', this.elMulti, this.capMs ? this.elExtra : this.elTimer);
+      this.komboGlow(els, k.mult >= KOMBO_MAX);
+    }
+  }
+
+  /**
+   * Short blue glow around the answered tiles. It lives in the effects layer (the next question can
+   * replace the buttons right away) and only fades and scales – smooth on the compositor.
+   */
+  komboGlow(els, max) {
+    const base = this.fx.getBoundingClientRect();
+    for (const el of els) {
+      if (!el || !el.isConnected) continue;
+      const r = el.getBoundingClientRect();
+      this.flash(h('span', {
+        class: 'kombo-glow' + (max ? ' max' : ''),
+        style: { left: (r.left - base.left) + 'px', top: (r.top - base.top) + 'px', width: r.width + 'px', height: r.height + 'px' },
+      }), 700);
     }
   }
 
@@ -841,7 +858,7 @@ export class Game {
       store.bumpStat(this.list.id, tile.w.id, true);
       ps.left--;
       ps.matched++;
-      this.komboHit();
+      this.komboHit([sel.el, tile.el]);
       this.renderPairsCount();
       if (ps.left === 0) this.finishRound();
       else if (ps.extra.length && ps.matched === WIRBEL_EXTRA) this.wirbelSwap();
@@ -891,7 +908,7 @@ export class Game {
         sfx.good();
         store.bumpStat(this.list.id, q.w.id, true);
         qi++;
-        this.komboHit();
+        this.komboHit([btn]);
         if (qi >= qs.length) {
           this.finishRound();
         } else {

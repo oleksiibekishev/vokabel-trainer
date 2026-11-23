@@ -36,7 +36,34 @@ async function main() {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
   await page.goto(BASE);
+  // ---------- 0. Einführung on the first start: 7 steps, buttons and swipe, then never again ----------
+  await page.waitForSelector('.intro.in');
+  assert.equal(await page.locator('.ob-dots i').count(), 7);
+  assert.equal(await page.locator('.ob-slide.on .ob-title').textContent(), 'Willkommen!');
+  assert.equal(await page.locator('.ob-back').evaluate((e) => getComputedStyle(e).visibility), 'hidden', 'no "Zurück" on the first step');
+  await shot(page, '00-intro');
+  await page.locator('.ob-next').click();
+  await page.waitForFunction(() => document.querySelector('.ob-slide.on .ob-title').textContent === 'Ein Timer pro Level');
+  // swipe to the next step
+  const tb = await page.locator('.ob-track').boundingBox();
+  await page.mouse.move(tb.x + tb.width * 0.8, tb.y + 300);
+  await page.mouse.down();
+  for (let i = 1; i <= 6; i++) await page.mouse.move(tb.x + tb.width * 0.8 - i * 30, tb.y + 302);
+  await page.mouse.up();
+  await page.waitForFunction(() => document.querySelector('.ob-slide.on .ob-title').textContent.startsWith('Vier Spiele'));
+  await page.locator('.ob-back').click();
+  await page.waitForFunction(() => document.querySelector('.ob-slide.on .ob-title').textContent === 'Ein Timer pro Level');
+  for (let i = 0; i < 5; i++) await page.locator('.ob-next').click();
+  assert.equal((await page.locator('.ob-next').textContent()).trim(), 'Los geht’s', 'last step');
+  assert.ok((await page.locator('.ob-slide.on').textContent()).includes('Listen & Wörter'));
+  await page.locator('.ob-next').click();
+  await page.waitForFunction(() => !document.querySelector('.intro'));
+  assert.ok(await page.evaluate(() => JSON.parse(localStorage.getItem('vokabeltrainer.v1')).settings.introSeen), 'seen');
+  await page.reload();
   await page.waitForSelector('.level-card');
+  await page.waitForTimeout(400);
+  assert.equal(await page.locator('.intro').count(), 0, 'only once');
+  assert.equal(await page.locator('.rules').count(), 0, 'no rules box on the start screen any more');
   assert.equal(await page.locator('.level-card').count(), 3);
   assert.ok(await page.locator('.level-card.level-medium').isDisabled(), 'medium locked at start');
   await shot(page, '01-home');
@@ -256,13 +283,7 @@ async function main() {
   await page.waitForSelector('.home');
 
   // ---------- 4. spelling mistake shows the letter diff ----------
-  await page.evaluate(() => {
-    const k = 'vokabeltrainer.v1';
-    const s = JSON.parse(localStorage.getItem(k));
-    s.settings.timing.hard = { start: 300 };
-    localStorage.setItem(k, JSON.stringify(s));
-  });
-  await page.reload();
+  await page.evaluate(() => { window.__vtTiming = { hard: { start: 300 } }; });
   await page.locator('.level-card.level-hard').click();
   await page.waitForSelector('.board');
   for (let r = 1; r <= 2; r++) {
@@ -307,13 +328,7 @@ async function main() {
   assert.ok(gapsFound, 'gaps round tested');
 
   // ---------- 6. time runs out ----------
-  await page.evaluate(() => {
-    const k = 'vokabeltrainer.v1';
-    const s = JSON.parse(localStorage.getItem(k));
-    s.settings.timing.easy = { start: 10 };
-    localStorage.setItem(k, JSON.stringify(s));
-  });
-  await page.reload();
+  await page.evaluate(() => { window.__vtTiming = { easy: { start: 10 } }; });
   await page.locator('.level-card.level-easy').click();
   await page.waitForSelector('.modal-fail', { timeout: 15000 });
   assert.ok((await page.locator('.modal').textContent()).includes('Zeit abgelaufen'));
@@ -353,8 +368,6 @@ async function main() {
   await page.waitForFunction(() => document.querySelector('.home') && !document.querySelector('.sheet') && !document.documentElement.classList.contains('busy'));
   assert.equal((await page.locator('.list-name').textContent()).trim(), 'Testliste');
   assert.ok(await page.locator('.level-card.level-medium').isDisabled(), 'new list starts locked');
-  const homeOrder = await page.evaluate(() => [...document.querySelectorAll('.rules, .level-card')].map((e) => e.className.split(' ')[0]));
-  assert.equal(homeOrder[0], 'rules', 'rules come before the level cards');
 
   const shareUrl = await page.evaluate(async () => {
     const core = await import('./js/core.js');
@@ -367,10 +380,15 @@ async function main() {
   p2.on('pageerror', (e) => errors.push(String(e)));
   await p2.goto(shareUrl);
   await p2.waitForSelector('.modal');
+  assert.equal(await p2.locator('.intro').count(), 0, 'a shared list comes first, the Einführung after it');
   assert.ok((await p2.locator('.modal').textContent()).includes('Testliste'));
   await shot(p2, '12-import-uk');
   await p2.locator('.modal .btn.primary').click();
   await p2.waitForFunction(() => document.querySelector('.list-name')?.textContent === 'Testliste');
+  await p2.waitForSelector('.intro.in');
+  assert.ok((await p2.locator('.ob-slide.on').textContent()).includes('Вітаю'), 'Einführung in Ukrainian');
+  await p2.locator('.ob-skip').click();
+  await p2.waitForFunction(() => !document.querySelector('.intro'));
   assert.ok(!p2.url().includes('#l='), 'hash cleared');
   await shot(p2, '13-home-uk');
   await ctx2.close();
@@ -458,14 +476,9 @@ async function main() {
 
   // ---------- 8a. time limit, Kombo and Extrazeit (Leicht, Kombo forced in round 4) ----------
   const setState = (fn) => page.evaluate(fn);
-  await setState(() => {
-    const k = 'vokabeltrainer.v1';
-    const s = JSON.parse(localStorage.getItem(k));
-    s.settings.timing = {};
-    localStorage.setItem(k, JSON.stringify(s));
-  });
-  await page.reload();
-  await page.waitForSelector('.home');
+  await page.evaluate(() => { window.__vtTiming = undefined; });
+  await page.goBack();
+  await page.waitForFunction(() => document.querySelector('.home') && !document.querySelector('.sheet') && !document.documentElement.classList.contains('busy'));
   assert.ok((await page.locator('.level-card.level-hard .level-meta').textContent()).includes('max. 30 s'), 'level card shows the limit');
   await page.evaluate(() => { window.__vtMods = { 4: 'kombo' }; });
   await page.locator('.level-card.level-easy').click();
@@ -484,7 +497,13 @@ async function main() {
   await shot(page, '20-kombo-banner');
   await waitBanner();
   assert.equal(await page.locator('.time-slot .multi').textContent(), '×1', 'multiplier next to the timer');
+  await page.evaluate(() => {
+    window.__glows = 0;
+    new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => { if (n.classList && n.classList.contains('kombo-glow')) window.__glows++; })))
+      .observe(document.querySelector('.fx-layer'), { childList: true });
+  });
   await playRound();
+  assert.ok(await page.evaluate(() => window.__glows >= 2), 'the tiles glow blue when a Kombo step is earned');
   const reserve = await page.evaluate(() => window.__vtGame.reserve);
   assert.ok(reserve >= 15000, 'fast answers in a Kombo round give at least +15 s Extrazeit, got ' + reserve);
   await page.waitForFunction(() => document.querySelector('.game-round').textContent.startsWith('Runde 5'));
@@ -705,10 +724,16 @@ async function main() {
   assert.ok(await page.locator('.mode-card.mode-training').isDisabled(), 'no words with mistakes left');
   assert.ok((await page.locator('.mode-card.mode-training').textContent()).includes('Keine Fehlerwörter'));
 
-  // settings: limit column
+  // settings: no own level times any more; Zeitbombe switch; Einführung again (back button closes it)
   await page.locator('.home-top .icon-btn').click();
-  await page.waitForSelector('.timing');
-  assert.equal(await page.locator('.timing .num-field').count(), 9, 'start, bonus and limit for 3 levels');
+  await page.waitForSelector('.sheet .switch');
+  assert.equal(await page.locator('.timing').count(), 0, 'no level times');
+  assert.ok(await page.locator('.set-row', { hasText: 'Zeitbombe' }).locator('.switch.on').count(), 'Zeitbombe on');
+  assert.equal(await page.locator('.set-row', { hasText: 'ausprobieren' }).count(), 0, 'no test button');
+  await page.locator('.set-row', { hasText: 'Einführung' }).locator('.btn').click();
+  await page.waitForSelector('.intro.in');
+  await page.goBack();
+  await page.waitForFunction(() => !document.querySelector('.intro') && document.querySelector('.sheet'));
   await page.goBack();
   await page.waitForFunction(() => document.querySelector('.home') && !document.querySelector('.sheet') && !document.documentElement.classList.contains('busy'));
 
@@ -780,7 +805,7 @@ async function main() {
 
   // ---------- 8i. "Fortschritt zurücksetzen": Endlos stays open (for every list) ----------
   await page.locator('.home-top .icon-btn').click();
-  await page.waitForSelector('.sheet .timing');
+  await page.waitForSelector('.sheet .switch');
   await page.locator('.btn', { hasText: 'Fortschritt zurücksetzen' }).click();
   await page.locator('.modal .btn', { hasText: 'Zurücksetzen' }).click();
   await page.goBack();
@@ -790,7 +815,6 @@ async function main() {
   assert.equal(await page.locator('.streak-chip .roll').textContent(), '0', 'Tagesserie starts again');
 
   // ---------- 8. Android back button during a game asks before quitting ----------
-  await page.goBack();
   await page.waitForFunction(() => document.querySelector('.home') && !document.querySelector('.sheet') && !document.documentElement.classList.contains('busy'));
   await page.locator('.level-card.level-easy').click();
   await page.waitForSelector('.tile');

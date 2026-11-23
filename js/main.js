@@ -1,13 +1,14 @@
 import * as store from './store.js';
-import { t, tList, tSplit, setLang, detectLang, LANGS, getLang } from './i18n.js';
+import { t, tSplit, setLang, detectLang, LANGS, getLang } from './i18n.js';
 import { h, icon, logo, levelBars, toast, modal, confirmDialog, sfx, closeAllModals } from './ui.js';
 import {
   LEVELS, LEVEL_IDS, MIN_WORDS, parseWordList, encodeData, decodeData, listToShare, listFromShare, listIdFor, listToText,
 } from './core.js';
 import { Game } from './game.js';
 import * as streakUI from './streak.js';
+import { openIntro, closeIntro, introIsOpen } from './intro.js';
 
-export const APP_VERSION = '1.8.1';
+export const APP_VERSION = '1.9.0';
 
 const app = document.getElementById('app');
 let game = null;
@@ -204,7 +205,7 @@ function levelStates(list) {
 }
 
 /** Start a game: the start screen fades out, the game fades in, its parts one after another. */
-async function startGame({ level, focus = [], fromGame = false, forceMods = null } = {}) {
+async function startGame({ level, focus = [], fromGame = false } = {}) {
   const list = store.currentList();
   const allowed = list && list.words.length >= MIN_WORDS && (
     level === 'endless' ? store.endlessUnlocked()
@@ -229,7 +230,7 @@ async function startGame({ level, focus = [], fromGame = false, forceMods = null
   app.replaceChildren(root);
   window.scrollTo(0, 0);
   game = new Game({
-    root, list, level, focus, forceMods,
+    root, list, level, focus,
     onMenu: () => { game = null; goBack(); },
     onNextLevel: (lvl) => show('game', { level: lvl, fromGame: true }),
     onTrain: (ids) => show('game', { level: 'training', focus: ids, fromGame: true }),
@@ -301,6 +302,7 @@ function goBack() {
 }
 
 window.addEventListener('popstate', () => {
+  if (introIsOpen() && !(history.state && history.state.intro)) { closeIntro(); return; }
   if (game && !game.ended && !game.destroyed) {
     history.pushState({ screen: 'game' }, '');
     game.askQuit();
@@ -315,6 +317,13 @@ window.addEventListener('popstate', () => {
   }
   show(screen);
 });
+
+/** Einführung (first start, or Einstellungen → Einführung); the back button closes it. */
+function startIntro() {
+  if (introIsOpen() || document.documentElement.classList.contains('busy')) return Promise.resolve();
+  history.pushState({ screen: (history.state && history.state.screen) || 'home', intro: true }, '');
+  return openIntro({ onRequestClose: () => history.back() });
+}
 
 function openCalendar(card) {
   if (!card || streakUI.calendarIsOpen() || document.documentElement.classList.contains('busy')) return;
@@ -369,12 +378,6 @@ function renderHome() {
     wrap.appendChild(h('div', { class: 'notice-err', role: 'alert' }, icon('alert'),
       h('span', null, t('listTooSmall', { n: list.words.length, min: MIN_WORDS }))));
   }
-  const rules = h('details', { class: 'rules', open: !store.settings().rulesClosed },
-    h('summary', null, t('rulesTitle'), icon('chevronDown')),
-    h('ol', null, tList('rules').map((r, i) => h('li', null, h('span', { class: 'num' }, String(i + 1)), h('span', null, r)))),
-    legend());
-  rules.addEventListener('toggle', () => store.setSetting('rulesClosed', !rules.open));
-  wrap.appendChild(rules);
   wrap.appendChild(h('div', { class: 'levels' }, LEVEL_IDS.map((lvl) => levelCard(list, lvl, enough))));
   wrap.appendChild(modesSection(list, enough));
   return wrap;
@@ -415,24 +418,6 @@ function modesSection(list, enough) {
       play: t('practice'),
       badge: mistakes > 0 ? String(mistakes) : null,
     }));
-}
-
-/** Special rounds, Extrazeit and the time limit, each with its icon (in "So funktioniert's"). */
-function legend() {
-  const item = (cls, ic, name, text) => h('li', null,
-    h('span', { class: 'legend-icon ' + cls, 'aria-hidden': 'true' }, icon(ic)),
-    h('span', null, h('b', null, name), ' – ' + text));
-  return h('div', { class: 'legend' },
-    h('div', { class: 'legend-head' },
-      h('span', { class: 'legend-title' }, t('specialRounds')),
-      h('span', { class: 'legend-hint' }, h('span', { class: 'dot has-mod done', 'aria-hidden': 'true' }), t('specialHint'))),
-    h('ul', null,
-      item('mod-wirbel', 'wirbel', t('mod_wirbel'), t('legend_wirbel')),
-      item('mod-kombo', 'kombo', t('mod_kombo'), t('legend_kombo')),
-      item('mod-zeitraffer', 'zeitraffer', t('mod_zeitraffer'), t('legend_zeitraffer')),
-      store.settings().zeitbombe !== false ? item('mod-zeitbombe', 'zeitbombe', t('mod_zeitbombe'), t('legend_zeitbombe')) : null,
-      item('tone-extra', 'extra', t('extraTime'), t('legend_extra')),
-      item('', 'limit', t('limitName'), t('legend_limit'))));
 }
 
 function levelCard(list, level, enough) {
@@ -771,50 +756,14 @@ function renderSettings() {
         onclick: () => { store.setSetting('lang', l.id); setLang(l.id); show('settings'); },
       }, l.label)))),
     switchRow(t('sound'), 'sound'),
-    'vibrate' in navigator ? switchRow(t('vibration'), 'vibrate', t('vibrationHint')) : null));
-
-  // test version of the Zeitbombe: switch it off, or play it right away
-  const zbOn = store.settings().zeitbombe !== false;
-  const cur = store.currentList();
-  const canTry = zbOn && cur && cur.words.length >= 8 && store.isUnlocked(cur.id, 'medium');
-  wrap.appendChild(h('section', { class: 'card settings-card' },
-    h('h2', { class: 'card-title', style: { fontSize: '20px', margin: '14px 0 2px' } }, t('testFeatures')),
+    'vibrate' in navigator ? switchRow(t('vibration'), 'vibrate', t('vibrationHint')) : null,
     switchRow(t('zbSetting'), 'zeitbombe', t('zbSettingHint')),
-    zbOn ? h('div', { class: 'set-row' },
-      h('span', { class: 'set-label' }, t('zbTry'), h('small', null, canTry ? t('zbTryHint') : t('zbTryLocked'))),
+    h('div', { class: 'set-row' },
+      h('span', { class: 'set-label' }, t('introSetting'), h('small', null, t('introSettingHint'))),
       h('button', {
-        class: 'btn outline', type: 'button', disabled: !canTry, style: { flex: 'none', height: '44px', padding: '0 14px' },
-        onclick: () => navigate('game', { level: 'medium', forceMods: { 1: 'zeitbombe' } }),
-      }, icon('zeitbombe'), t('zbTryShort'))) : null));
-
-  const timingCells = [
-    h('span'), h('span', { class: 'timing-head' }, t('startTime')), h('span', { class: 'timing-head' }, t('bonusTime')),
-    h('span', { class: 'timing-head' }, t('limitTime')),
-  ];
-  const ARIA = { start: 'startAria', bonus: 'bonusAria', cap: 'limitAria' };
-  const fields = {};
-  for (const lvl of LEVEL_IDS) {
-    const tm = store.timing(lvl);
-    const num = (key, val) => h('input', {
-      class: 'num-field', type: 'number', inputmode: 'numeric', min: key === 'bonus' ? '0' : '10', max: key === 'bonus' ? '120' : '600',
-      value: String(val), 'aria-label': t(ARIA[key], { level: t('level_' + lvl) }),
-      onchange: (e) => {
-        store.setTiming(lvl, key, e.target.value);
-        // the limit is never below the start time, so both fields are refreshed
-        const now = store.timing(lvl);
-        for (const k of Object.keys(ARIA)) fields[lvl + k].value = String(now[k]);
-      },
-    });
-    for (const k of Object.keys(ARIA)) fields[lvl + k] = num(k, tm[k]);
-    timingCells.push(
-      h('span', { class: 'timing-level lv-' + lvl }, levelBars(lvl, 'md'), t('level_' + lvl)),
-      fields[lvl + 'start'], fields[lvl + 'bonus'], fields[lvl + 'cap']);
-  }
-  wrap.appendChild(h('section', { class: 'card stack' },
-    h('div', { class: 'section-head' },
-      h('h2', null, t('timing')),
-      h('button', { class: 'btn text', type: 'button', onclick: () => { store.resetTiming(); show('settings'); } }, icon('reset'), t('resetTiming'))),
-    h('div', { class: 'timing' }, timingCells)));
+        class: 'btn outline set-btn', type: 'button',
+        onclick: () => startIntro(),
+      }, icon('play'), t('introShow')))));
 
   const codeBox = h('div', { class: 'code-box', hidden: true });
   const loadArea = h('textarea', { class: 'field area mono', id: 'code-in', rows: '2', spellcheck: 'false' });
@@ -881,7 +830,7 @@ function registerSW() {
 
 /** A new version is installed: reload quietly as soon as we are on the start screen (never during a game). */
 function applyUpdateIfIdle() {
-  if (!updateWaiting || game || base !== 'home' || sheets.length || streakUI.calendarIsOpen() || document.querySelector('.modal-wrap')) return;
+  if (!updateWaiting || game || base !== 'home' || sheets.length || streakUI.calendarIsOpen() || introIsOpen() || document.querySelector('.modal-wrap')) return;
   updateWaiting = false;
   location.reload();
 }
@@ -902,8 +851,12 @@ function boot() {
   store.load();
   setLang(store.settings().lang || detectLang());
   history.replaceState({ screen: 'home' }, '', location.href);
-  show('home').then(() => playHomeAnims());
-  handleImportLink();
+  show('home').then(async () => {
+    // a shared list first (that is why the link was opened), then the Einführung on the very first start
+    await handleImportLink();
+    if (!store.settings().introSeen) await startIntro();
+    playHomeAnims();
+  });
   registerSW();
 }
 

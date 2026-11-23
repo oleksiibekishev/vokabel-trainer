@@ -23,7 +23,8 @@ function defaults() {
     // Endlos opens for every list as soon as "Mittel" was passed in any list – and stays open
     // (also after "Fortschritt zurücksetzen" or deleting the list)
     unlocks: { endless: false },
-    settings: { lang: null, sound: true, vibrate: true, timing: {}, iosHintDismissed: false, zeitbombe: true },
+    // introSeen: the Einführung was shown once (first start); it can be opened again in the settings
+    settings: { lang: null, sound: true, vibrate: true, iosHintDismissed: false, zeitbombe: true, introSeen: false },
   };
 }
 
@@ -34,6 +35,8 @@ function sanitize(s) {
   if (!s || typeof s !== 'object' || s.v !== 1) return d;
   const out = { ...d, ...s };
   out.settings = { ...d.settings, ...(s.settings || {}) };
+  delete out.settings.timing; // own level times (until 1.8) are gone
+  delete out.settings.rulesClosed; // the "So funktioniert's" box is now the Einführung
   for (const k of ['lists', 'progress', 'fixed', 'stats', 'unlocks']) if (!out[k] || typeof out[k] !== 'object') out[k] = {};
   out.unlocks = { endless: out.unlocks.endless === true };
   out.days = Array.isArray(out.days) ? [...new Set(out.days.filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)))].sort() : [];
@@ -292,27 +295,13 @@ export function setSetting(key, value) {
   save();
 }
 
-/** Start time, round bonus and time limit of a level (own values from the settings or the defaults). */
+/** Start time, round bonus and time limit of a level (fixed; own times in the settings were removed in 1.9). */
 export function timing(level) {
   const d = LEVELS[level];
-  const o = state.settings.timing[level] || {};
-  const clamp = (v, lo, hi, def) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : def);
-  const start = clamp(o.start, 10, 600, d.start);
-  // without an own limit the limit follows the start time (the defaults are equal)
-  const cap = Math.max(start, clamp(o.cap, 10, 600, start === d.start ? d.cap : start));
-  return { start, bonus: clamp(o.bonus, 0, 120, d.bonus), cap };
+  return { start: d.start, bonus: d.bonus, cap: d.cap };
 }
 
-export function setTiming(level, key, value) {
-  const tm = (state.settings.timing[level] = state.settings.timing[level] || {});
-  tm[key] = Number(value);
-  save();
-}
 
-export function resetTiming() {
-  state.settings.timing = {};
-  save();
-}
 
 // ---------- Tagesserie ----------
 
