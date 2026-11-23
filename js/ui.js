@@ -61,6 +61,8 @@ const ICONS = {
   kombo: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
   zeitraffer: '<path d="M13 19 22 12 13 5z"/><path d="M2 19 11 12 2 5z"/>',
   extra: '<path d="M21 12.5A9 9 0 1 0 12.5 21"/><path d="M12 7v5l3 2"/><path d="M19 15v6"/><path d="M16 18h6"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  pencil: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
   zeitbombe: '<circle cx="11" cy="13" r="9"/><path d="M14.35 4.65 16.3 2.7a2.41 2.41 0 0 1 3.4 0l1.6 1.6a2.4 2.4 0 0 1 0 3.4l-1.95 1.95"/><path class="zb-ic-spark" d="m22 2-1.5 1.5"/>',
   limit: '<path d="M3.34 19a10 10 0 1 1 17.32 0"/><path d="m12 14 6 3"/><circle cx="12" cy="14" r="1"/>',
   endless: '<path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z"/>',
@@ -127,26 +129,12 @@ function makeButton(b, close) {
   }, b.iconLeft ? icon(b.iconLeft) : null, b.label, b.icon ? icon(b.icon, 'accent') : null);
 }
 
-// ---------- system status bar ----------
-// While a dialog, sheet or the calendar dims the page, the status bar gets the same dimmed tone
-// (page colour under the scrim), so there is no light/grey band above it.
-const DIMMED = { light: '#999996', dark: '#111110' };
-const dimKeys = new Set();
-let dimSeq = 0;
-export function dimStatusBar(key, on) {
-  if (on) dimKeys.add(key); else dimKeys.delete(key);
-  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
-    if (!m.dataset.base) m.dataset.base = m.getAttribute('content');
-    const dark = (m.getAttribute('media') || '').includes('dark');
-    m.setAttribute('content', dimKeys.size ? DIMMED[dark ? 'dark' : 'light'] : m.dataset.base);
-  });
-}
+// The status bar keeps the page colour (theme-color in index.html) – it is not dimmed with dialogs:
+// Android colours it a moment later than the page, which looked like a lag.
 
 /** Removes every open dialog at once (when the screen changes). */
 export function closeAllModals() {
   document.querySelectorAll('.modal-wrap').forEach((m) => m.remove());
-  for (const k of [...dimKeys]) if (k.startsWith('modal')) dimKeys.delete(k);
-  dimStatusBar('', false);
 }
 
 /**
@@ -158,14 +146,11 @@ export function modal({ title, icon: ic, body, buttons, cls = '', center = false
   return new Promise((resolve) => {
     const prevFocus = document.activeElement;
     let done = false;
-    const dimKey = 'modal' + (++dimSeq);
-    if (!clear) dimStatusBar(dimKey, true);
     const close = (value) => {
       if (done) return;
       done = true;
-      dimStatusBar(dimKey, false);
       wrap.classList.add('closing');
-      setTimeout(() => wrap.remove(), clear ? 160 : 240);
+      setTimeout(() => wrap.remove(), 160);
       if (prevFocus && prevFocus.focus && prevFocus.isConnected) {
         try { prevFocus.focus({ preventScroll: true }); } catch { /* ignore */ }
       }

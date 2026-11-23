@@ -1,13 +1,13 @@
 import * as store from './store.js';
 import { t, tList, tSplit, setLang, detectLang, LANGS, getLang } from './i18n.js';
-import { h, icon, logo, levelBars, toast, modal, confirmDialog, sfx, dimStatusBar, closeAllModals } from './ui.js';
+import { h, icon, logo, levelBars, toast, modal, confirmDialog, sfx, closeAllModals } from './ui.js';
 import {
-  LEVELS, LEVEL_IDS, MIN_WORDS, parseWordList, encodeData, decodeData, listToShare, listFromShare, listIdFor,
+  LEVELS, LEVEL_IDS, MIN_WORDS, parseWordList, encodeData, decodeData, listToShare, listFromShare, listIdFor, listToText,
 } from './core.js';
 import { Game } from './game.js';
 import * as streakUI from './streak.js';
 
-export const APP_VERSION = '1.8.0';
+export const APP_VERSION = '1.8.1';
 
 const app = document.getElementById('app');
 let game = null;
@@ -18,7 +18,13 @@ let updateWaiting = false;
 // #app shows the start screen or a game. Lists, the new-list form and the settings open as
 // sheets from the bottom over the (receding, dimmed) start screen. A game fades in and out.
 
-const SHEETS = { lists: () => renderLists(), addList: () => renderAddList(), settings: () => renderSettings() };
+const SHEETS = {
+  lists: () => renderLists(),
+  addList: () => renderAddList(),
+  editList: () => renderAddList(store.get().lists[editListId] || null),
+  settings: () => renderSettings(),
+};
+let editListId = null; // the list "Liste bearbeiten" shows
 const sheets = []; // open sheets, bottom to top: { name, layer, dim, under }
 let base = 'home'; // 'home' | 'game'
 let homeScroll = 0;
@@ -72,37 +78,107 @@ function refreshHome() {
 }
 
 function refreshSheet(sh) {
-  sh.layer.firstElementChild.replaceChildren(SHEETS[sh.name]());
+  sh.layer.querySelector('.sheet-inner').replaceChildren(SHEETS[sh.name]());
 }
 
 async function openSheet(name) {
   const under = sheets.length ? sheets[sheets.length - 1].layer : app;
   if (under === app) app.style.setProperty('--sy', window.scrollY + 'px');
   const dim = h('div', { class: 'sheet-dim in' });
-  const layer = h('div', { class: 'sheet sheet-in', role: 'dialog', 'aria-modal': 'true' }, h('div', { class: 'sheet-inner' }, SHEETS[name]()));
+  const layer = h('div', { class: 'sheet sheet-in', role: 'dialog', 'aria-modal': 'true' },
+    h('div', { class: 'sheet-grip', 'aria-hidden': 'true' }),
+    h('div', { class: 'sheet-inner' }, SHEETS[name]()));
   const title = layer.querySelector('h1');
   if (title) layer.setAttribute('aria-label', title.textContent);
   under.classList.remove('return');
   under.classList.add('recede');
   document.body.append(dim, layer);
   document.documentElement.classList.add('locked');
-  dimStatusBar('sheet-' + name, true);
-  sheets.push({ name, layer, dim, under });
+  const sh = { name, layer, dim, under };
+  sheets.push(sh);
+  layer.addEventListener('scroll', () => layer.classList.toggle('scrolled', layer.scrollTop > 2), { passive: true });
+  dragToClose(sh);
   busy(true);
   await wait(ms(420));
   busy(false);
   layer.classList.remove('sheet-in');
+  dim.classList.replace('in', 'on');
+}
+
+/**
+ * Pull a sheet down to close it – only from the very top (handle and title bar, which stay at the
+ * top while the content scrolls). Scrolling the content up never closes the sheet.
+ */
+function dragToClose(sh) {
+  const { layer, dim } = sh;
+  let y0 = null;
+  let pid = null;
+  let dy = 0;
+  let dragging = false;
+  let vel = 0;
+  let lastY = 0;
+  let lastT = 0;
+  layer.addEventListener('pointerdown', (e) => {
+    if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    if (sheets[sheets.length - 1] !== sh || document.documentElement.classList.contains('busy')) return;
+    if (!e.target.closest('.sheet-grip, .sheet .topbar')) return;
+    y0 = e.clientY; pid = e.pointerId; dy = 0; dragging = false; vel = 0; lastY = y0; lastT = e.timeStamp;
+  });
+  layer.addEventListener('pointermove', (e) => {
+    if (y0 === null || e.pointerId !== pid) return;
+    const d = e.clientY - y0;
+    if (!dragging) {
+      if (d < -10) { y0 = null; return; }
+      if (d < 8) return;
+      dragging = true;
+      try { layer.setPointerCapture(pid); } catch { /* ignore */ }
+      layer.classList.add('dragging');
+    }
+    dy = Math.max(0, d);
+    if (e.timeStamp > lastT) vel = (e.clientY - lastY) / (e.timeStamp - lastT);
+    lastY = e.clientY;
+    lastT = e.timeStamp;
+    layer.style.transform = 'translateY(' + dy + 'px)';
+    dim.style.opacity = String(1 - 0.85 * Math.min(1, dy / layer.offsetHeight));
+  });
+  const end = (e) => {
+    if (y0 === null || e.pointerId !== pid) return;
+    y0 = null;
+    if (!dragging) return;
+    dragging = false;
+    layer.classList.remove('dragging');
+    // the finger was dragging, not tapping the ✕
+    const block = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+    layer.addEventListener('click', block, true);
+    setTimeout(() => layer.removeEventListener('click', block, true), 80);
+    if (e.type !== 'pointercancel' && (dy > layer.offsetHeight * 0.25 || (vel > 0.5 && dy > 40))) {
+      goBack();
+      return;
+    }
+    // not far enough: back up
+    layer.classList.add('snap');
+    dim.classList.add('snap');
+    layer.style.transform = '';
+    dim.style.opacity = '';
+    setTimeout(() => { layer.classList.remove('snap'); dim.classList.remove('snap'); }, 260);
+  };
+  layer.addEventListener('pointerup', end);
+  layer.addEventListener('pointercancel', end);
 }
 
 async function closeSheets(keep) {
   while (sheets.length > keep) {
     const sh = sheets.pop();
-    sh.dim.classList.remove('in');
+    // pulled down by hand: slide out from where the finger let go
+    const m = /translateY\(([\d.]+)px\)/.exec(sh.layer.style.transform);
+    if (m) sh.layer.style.setProperty('--from', m[1] + 'px');
+    sh.layer.style.transform = '';
+    if (sh.dim.style.opacity) { sh.dim.style.setProperty('--dim-o', sh.dim.style.opacity); sh.dim.style.opacity = ''; }
+    sh.dim.classList.remove('in', 'on');
     sh.dim.classList.add('out');
     sh.under.classList.remove('recede');
     sh.under.classList.add('return');
     sh.layer.classList.add('sheet-out');
-    dimStatusBar('sheet-' + sh.name, false);
     busy(true);
     await wait(ms(320));
     busy(false);
@@ -137,7 +213,7 @@ async function startGame({ level, focus = [], fromGame = false, forceMods = null
   if (!allowed) { await doShow('home'); return; }
   busy(true);
   if (sheets.length) {
-    sheets.splice(0).forEach((sh) => { sh.layer.remove(); sh.dim.remove(); dimStatusBar('sheet-' + sh.name, false); });
+    sheets.splice(0).forEach((sh) => { sh.layer.remove(); sh.dim.remove(); });
     document.documentElement.classList.remove('locked');
     app.classList.remove('recede', 'return');
   }
@@ -454,6 +530,10 @@ function renderLists() {
       },
       h('span', { class: 'list-title' }, l.name, active ? h('span', { class: 'badge' }, t('active')) : null),
       h('span', { class: 'list-count' }, t('wordsN', { n: l.words.length }))),
+      h('button', {
+        class: 'icon-btn', type: 'button', 'aria-label': t('editListAria', { name: l.name }),
+        onclick: () => { editListId = l.id; navigate('editList'); },
+      }, icon('pencil')),
       h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('shareList', { name: l.name }), onclick: () => shareList(l) }, icon('share')),
       h('button', {
         class: 'icon-btn err', type: 'button', 'aria-label': t('deleteList', { name: l.name }),
@@ -489,14 +569,20 @@ function wordsSection(list) {
           : h('span', { class: 'miss none', 'aria-label': t('noMistakesAria') }, '–')))));
 }
 
-function renderAddList() {
-  const wrap = h('div', { class: 'screen' }, topbar(t('newList')));
+/** "Neue Liste" – or, with a list, "Liste bearbeiten" (same form, filled in). */
+function renderAddList(editing = null) {
+  const wrap = h('div', { class: 'screen' }, topbar(t(editing ? 'editList' : 'newList')));
   const nameInput = h('input', { class: 'field', id: 'list-name', type: 'text', maxlength: '60', placeholder: t('namePlaceholder'), required: true, autocomplete: 'off' });
-  const area = h('textarea', { class: 'field area', id: 'list-text', rows: '8', placeholder: t('pastePlaceholder'), spellcheck: 'false' });
+  const area = h('textarea', { class: 'field area', id: 'list-text', rows: editing ? '12' : '8', placeholder: t('pastePlaceholder'), spellcheck: 'false' });
+  if (editing) {
+    nameInput.value = editing.name;
+    area.value = listToText(editing.words);
+  }
+  const before = editing ? new Set(editing.words.map((w) => w.id)) : null;
   const preview = h('div', { class: 'preview', hidden: true });
   const fileInput = h('input', { type: 'file', accept: '.txt,.csv,.tsv,text/plain,text/csv', class: 'sr-only', id: 'file-in' });
   const nameHint = h('p', { class: 'field-error', hidden: true }, icon('alert'), t('nameRequired'));
-  const saveBtn = h('button', { class: 'btn primary tall', type: 'button', disabled: true }, t('saveList'));
+  const saveBtn = h('button', { class: 'btn primary tall', type: 'button', disabled: true }, t(editing ? 'saveChanges' : 'saveList'));
 
   const refresh = () => {
     const r = parseWordList(area.value);
@@ -507,10 +593,22 @@ function renderAddList() {
     nameInput.classList.toggle('invalid', !named && !!area.value.trim());
     preview.hidden = !area.value.trim();
     if (preview.hidden) { preview.replaceChildren(); return; }
+    let diff = null;
+    if (editing) {
+      const now = new Set(r.words.map((w) => w.id));
+      const added = r.words.filter((w) => !before.has(w.id)).length;
+      const removed = [...before].filter((id) => !now.has(id)).length;
+      const renamed = nameInput.value.trim() !== editing.name;
+      diff = h('div', { class: 'preview-diff' }, added || removed
+        ? [t('editAdded', { n: added }), t('editRemoved', { n: removed })].join(' · ')
+        : renamed ? '' : t('noChanges'));
+      if (!added && !removed && !renamed) saveBtn.disabled = true;
+    }
     preview.replaceChildren(...[
       wordsOk
         ? h('div', { class: 'preview-status ok' }, icon('check'), t('recognized', { n: r.words.length }))
         : h('div', { class: 'preview-status err' }, icon('alert'), t('tooFew', { n: MIN_WORDS })),
+      diff,
       r.words.length ? h('div', { class: 'pair-mini' }, r.words.slice(0, 4).map((w) => h('div', null,
         h('span', { lang: 'en' }, w.en), h('span', { lang: 'de' }, w.de)))) : null,
       r.skipped.length ? h('details', { class: 'skipped' },
@@ -530,6 +628,12 @@ function renderAddList() {
     const r = parseWordList(area.value);
     const name = nameInput.value.trim();
     if (r.words.length < MIN_WORDS || !name) return;
+    if (editing) {
+      store.updateList(editing.id, { name, words: r.words });
+      toast(t('listUpdated'), { icon: 'check' });
+      goBack();
+      return;
+    }
     const id = listIdFor(r.words);
     if (store.get().lists[id]) {
       store.selectList(id);
@@ -541,6 +645,7 @@ function renderAddList() {
     goBack();
   });
 
+  if (editing) refresh();
   wrap.appendChild(h('section', { class: 'card stack' },
     h('div', { class: 'field-group' },
       h('label', { class: 'field-label', for: 'list-name' }, t('listName')),
@@ -549,7 +654,7 @@ function renderAddList() {
     h('div', { class: 'field-group' },
       h('label', { class: 'field-label', for: 'list-text' }, t('pasteWords')),
       area,
-      h('p', { class: 'hint-small' }, t('formatHint'))),
+      h('p', { class: 'hint-small' }, t(editing ? 'editHint' : 'formatHint'))),
     h('label', { class: 'btn outline', for: 'file-in' }, icon('upload'), t('orFile')),
     fileInput,
     preview,
@@ -557,21 +662,63 @@ function renderAddList() {
   return wrap;
 }
 
+// The share link holds the whole list (#l=…), ~1000 characters for 36 words. is.gd turns it into a
+// short link. Its API answers as JSONP (no CORS needed); without internet the long link is used.
+const shortLinks = new Map();
+function shortLink(url) {
+  if (shortLinks.has(url)) return Promise.resolve(shortLinks.get(url));
+  return new Promise((resolve) => {
+    if (url.length > 4900 || navigator.onLine === false) { resolve(null); return; }
+    const cb = '__vtShort' + Math.random().toString(36).slice(2);
+    const s = document.createElement('script');
+    let timer = null;
+    const finish = (v) => {
+      if (!window[cb]) return;
+      delete window[cb];
+      clearTimeout(timer);
+      s.remove();
+      if (v) shortLinks.set(url, v);
+      resolve(v);
+    };
+    window[cb] = (r) => finish(r && typeof r.shorturl === 'string' && /^https:\/\/is\.gd\/[A-Za-z0-9_-]+$/.test(r.shorturl) ? r.shorturl : null);
+    s.src = 'https://is.gd/create.php?format=json&callback=' + cb + '&url=' + encodeURIComponent(url);
+    s.onerror = () => finish(null);
+    timer = setTimeout(() => finish(null), 7000);
+    document.head.appendChild(s);
+  });
+}
+
 async function shareList(list) {
   const code = await encodeData(listToShare(list));
-  const url = location.origin + location.pathname + '#l=' + code;
-  const text = t('shareText', { name: list.name });
-  if (navigator.share) {
-    try { await navigator.share({ title: list.name, text, url }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
-  }
-  try {
-    await navigator.clipboard.writeText(url);
-    toast(t('linkCopied'));
-  } catch {
-    const ta = h('textarea', { class: 'field area mono', rows: '4', readonly: true }, url);
-    modal({ title: t('share'), body: ta, buttons: [{ label: t('done'), value: true, kind: 'primary', grow: true }], dismissable: true });
-    setTimeout(() => ta.select(), 50);
-  }
+  const long = location.origin + location.pathname + '#l=' + code;
+  let url = long;
+  const urlText = h('span', { class: 'share-url' }, t('shareMaking'));
+  const linkBox = h('div', { class: 'share-link loading' }, icon('link'), urlText);
+  const note = h('p', { class: 'share-note' });
+  const send = h('button', { class: 'btn primary', type: 'button', disabled: true }, icon('share'), t('shareSend'));
+  const copy = h('button', { class: 'btn outline', type: 'button', disabled: true }, icon('copy'), t('copyLink'));
+  send.hidden = !navigator.share;
+  send.addEventListener('click', async () => {
+    try { await navigator.share({ title: list.name, text: t('shareText', { name: list.name }), url }); } catch { /* cancelled */ }
+  });
+  copy.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(url); toast(t('linkCopied')); } catch { /* not allowed */ }
+  });
+  modal({
+    title: t('shareTitle', { name: list.name }),
+    body: h('div', { class: 'share-box' },
+      h('p', { class: 'share-meta' }, t('shareWords', { n: list.words.length })),
+      linkBox, note, h('div', { class: 'share-actions' }, copy, send)),
+    buttons: [{ label: t('done'), value: true, kind: 'outline', grow: true }],
+    dismissable: true,
+  });
+  const short = await shortLink(long);
+  url = short || long;
+  linkBox.classList.remove('loading');
+  urlText.textContent = short ? short.replace(/^https:\/\//, '') : long.replace(/^https?:\/\//, '');
+  note.textContent = short ? t('shareShortVia') : t('shareLongOnly');
+  send.disabled = false;
+  copy.disabled = false;
 }
 
 async function handleImportLink() {

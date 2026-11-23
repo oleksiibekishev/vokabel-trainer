@@ -335,16 +335,48 @@ export class Bomb {
     g.endRun();
     g.root.classList.remove('zb-alarm');
     g.root.classList.add('zb-dead');
-    const order = [6, 7, 5, 4, 2, 3, 1, 0];
-    [...this.grid.children].forEach((el, i) => {
-      const s = i % 2 ? 1 : -1;
-      el.style.setProperty('--fx', (s * (10 + Math.round(Math.random() * 8))) + 'px');
-      el.style.setProperty('--fr', (s * (10 + Math.round(Math.random() * 8))) + 'deg');
-      el.style.setProperty('--k', String(order[i] ?? i));
-    });
     this.grid.classList.add('zb-blast');
+    this.blast();
     sfx.boom();
     setTimeout(() => { if (!g.destroyed) g.bombLost(matched); }, 1100);
+  }
+
+  /**
+   * The tiles jolt together (200 ms), then fall one after another, bottom row first in a zigzag
+   * (440 ms each, 60 ms apart). ONE transform animation per tile (Web Animations): two CSS
+   * animations on the same property kept Chrome from running them on the compositor (low fps).
+   */
+  blast() {
+    const order = [6, 7, 5, 4, 2, 3, 1, 0];
+    const reduce = this.g.reducedMotion();
+    [...this.grid.children].forEach((el, i) => {
+      const k = order[i] ?? i;
+      const start = 200 + k * 60;
+      el.style.transition = 'none';
+      if (!el.classList.contains('zb-tile')) {
+        el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: 'ease-in', fill: 'forwards' });
+        return;
+      }
+      if (reduce) {
+        el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, delay: start, easing: 'ease', fill: 'forwards' });
+        return;
+      }
+      const s = i % 2 ? 1 : -1;
+      const fx = s * (10 + Math.round(Math.random() * 8));
+      const fr = s * (10 + Math.round(Math.random() * 8));
+      const total = start + 440;
+      const at = (ms) => ms / total;
+      el.animate([
+        { offset: 0, transform: 'none', easing: 'ease-in-out' },
+        { offset: at(50), transform: `translate(${(-0.2 * fx).toFixed(1)}px, -3px) rotate(${(-0.2 * fr).toFixed(1)}deg)`, easing: 'ease-in-out' },
+        { offset: at(110), transform: `translate(${(0.15 * fx).toFixed(1)}px, 2px) rotate(${(0.15 * fr).toFixed(1)}deg)`, easing: 'ease-in-out' },
+        { offset: at(160), transform: `rotate(${(-0.06 * fr).toFixed(2)}deg)`, easing: 'ease-in-out' },
+        { offset: at(200), transform: 'none' },
+        { offset: at(start), transform: 'none', easing: 'cubic-bezier(.55, 0, 1, .45)' },
+        { offset: 1, transform: `translate(${fx}px, 760px) rotate(${fr}deg)` },
+      ], { duration: total, fill: 'forwards' });
+      el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 88, delay: start + 352, easing: 'linear', fill: 'forwards' });
+    });
   }
 
   // ---------- pause ----------

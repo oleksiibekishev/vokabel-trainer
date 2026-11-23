@@ -2,7 +2,7 @@
 // Design: "Vokabeltrainer – Tagesserie, Kalender & Übergänge".
 import * as store from './store.js';
 import { t, tList, tDays, plural } from './i18n.js';
-import { h, icon, dimStatusBar } from './ui.js';
+import { h, icon } from './ui.js';
 import { weekView, monthGrid, shiftMonth, bestStreak, addDays } from './core.js';
 
 const SPARK_COLORS = ['var(--accent)', 'var(--ochre)', 'var(--olive)', 'var(--fig)', 'var(--sky)'];
@@ -337,7 +337,6 @@ export async function openCalendar(card, { setBusy = () => {}, onRequestClose = 
     cal.style.setProperty('--k', ((cr.height - 30) / (H - 30)).toFixed(4));
     cal.style.setProperty('--db', (dt + cr.height - H) + 'px');
     document.documentElement.classList.add('locked');
-    dimStatusBar('cal', true);
     cal.classList.add('opening');
 
     const setNav = () => {
@@ -397,7 +396,6 @@ export async function closeCalendar() {
   c.cal.classList.add('closing');
   c.scrim.classList.remove('in');
   c.scrim.classList.add('out');
-  dimStatusBar('cal', false);
   await wait(470);
   c.cal.remove();
   c.scrim.remove();

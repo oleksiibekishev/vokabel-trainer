@@ -6,7 +6,7 @@ import {
 import { Bomb } from './bomb.js';
 import * as store from './store.js';
 import { t, tSplit, tDays } from './i18n.js';
-import { h, icon, levelBars, modal, sfx, dimStatusBar } from './ui.js';
+import { h, icon, levelBars, modal, sfx } from './ui.js';
 
 const BONUS_PAUSE_MS = 900;
 const MOD_BANNER_MS = 1500;
@@ -142,15 +142,7 @@ export class Game {
     this.root.className = 'screen game lv-' + this.level + (this.cfg.timer === false ? ' no-timer' : '');
     this.root.replaceChildren(
       h('header', { class: 'game-top' },
-        h('button', {
-          class: 'icon-btn', type: 'button', 'aria-label': t('quitTitle'), onclick: () => this.askQuit(),
-          // the status bar follows a little late: start dimming it already when the finger touches ×
-          onpointerdown: () => {
-            if (this.ended || this.destroyed || this.holds.has('pause')) return;
-            dimStatusBar('quit-touch', true);
-            setTimeout(() => dimStatusBar('quit-touch', false), 700);
-          },
-        }, icon('close')),
+        h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('quitTitle'), onclick: () => this.askQuit() }, icon('close')),
         h('div', { class: 'game-info' },
           h('span', { class: 'game-level' }, label),
           h('span', { class: 'round-line' }, this.elRound, this.elModChip)),

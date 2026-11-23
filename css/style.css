@@ -340,6 +340,18 @@ h1, h2, p { margin: 0; }
 .preview-status { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; }
 .preview-status.ok { color: var(--ok); }
 .preview-status.err { color: var(--err); }
+.preview-diff { margin-top: -4px; font-size: 13.5px; font-weight: 600; color: var(--muted); }
+.preview-diff:empty { display: none; }
+/* sharing a list: a short link instead of the long one with the whole list in it */
+.share-box { display: flex; flex-direction: column; gap: 12px; }
+.share-meta { font-size: 14px; color: var(--muted); }
+.share-link { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 14px; border-radius: 14px; background: var(--surface2); }
+.share-link .icon { flex: none; width: 18px; height: 18px; color: var(--muted); }
+.share-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 700; color: var(--text); }
+.share-link.loading .share-url { color: var(--muted); font-weight: 600; }
+.share-note { font-size: 12.5px; line-height: 1.4; color: var(--muted); }
+.share-actions { display: flex; gap: 10px; }
+.share-actions .btn { flex: 1; }
 .preview-status .icon { width: 18px; height: 18px; stroke-width: 2.5; }
 .pair-mini { display: flex; flex-direction: column; }
 .pair-mini div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13.5px; line-height: 1.35; }
@@ -657,9 +669,6 @@ h1, h2, p { margin: 0; }
 .modal-wrap { position: fixed; inset: 0; z-index: 50; padding: 16px; background: var(--scrim); display: grid; place-items: center; animation: fadeIn .15s ease; }
 .modal-wrap.clear { background: transparent; }
 .modal-wrap.closing { animation: fadeOut .16s ease forwards; }
-/* Android colours the status bar a moment after the page (theme-color): a slower scrim keeps both in step */
-.modal-wrap:not(.clear) { animation-duration: .3s; }
-.modal-wrap.closing:not(.clear) { animation-duration: .24s; }
 .modal {
   width: 100%; max-width: 420px; max-height: calc(100dvh - 32px); overflow: auto; padding: 22px 20px 20px; border-radius: 20px;
   background: var(--surface); border: 1px solid var(--line); color: var(--text); box-shadow: var(--shadow-lg);
@@ -1003,13 +1012,21 @@ html.locked, html.locked body { overflow: hidden; }
 /* sheets (lists, new list, settings): from the bottom, the screen behind recedes and gets darker */
 .sheet-dim { position: fixed; inset: 0; z-index: 39; background: var(--scrim); opacity: 0; pointer-events: none; }
 .sheet-dim.in { animation: dimIn .38s cubic-bezier(.2, .8, .2, 1) forwards; }
+.sheet-dim.on { opacity: 1; }
 .sheet-dim.out { animation: dimOut .3s cubic-bezier(.4, 0, .6, 1) forwards; }
 .sheet {
   position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; top: calc(env(safe-area-inset-top) + 14px); overflow-y: auto; overscroll-behavior: contain;
   background: var(--bg); border-radius: 20px 20px 0 0; box-shadow: 0 -6px 24px rgba(20, 20, 19, .16);
 }
-.sheet::before { content: ""; position: absolute; top: 6px; left: 50%; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: var(--line2); }
-.sheet-inner { max-width: 560px; margin: 0 auto; padding: 10px calc(env(safe-area-inset-right) + 16px) calc(env(safe-area-inset-bottom) + 28px) calc(env(safe-area-inset-left) + 16px); }
+/* handle + title bar stay at the top; pulling them down closes the sheet (main.js → dragToClose) */
+.sheet-grip { position: sticky; top: 0; z-index: 3; height: 14px; background: var(--bg); touch-action: none; }
+.sheet-grip::before { content: ""; position: absolute; top: 6px; left: 50%; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: var(--line2); }
+.sheet-inner { max-width: 560px; margin: 0 auto; padding: 0 calc(env(safe-area-inset-right) + 16px) calc(env(safe-area-inset-bottom) + 28px) calc(env(safe-area-inset-left) + 16px); }
+.sheet .topbar { position: sticky; top: 14px; z-index: 2; margin: 0 -16px 0 -26px; padding: 0 16px; background: var(--bg); touch-action: none; transition: box-shadow .2s; }
+.sheet.scrolled .topbar { box-shadow: 0 1px 0 var(--line); }
+.sheet.dragging { animation: none; }
+.sheet.snap { transition: transform .25s cubic-bezier(.2, .8, .2, 1); }
+.sheet-dim.snap { transition: opacity .25s; }
 .sheet.sheet-in { animation: var(--tr-sheet-in) .4s cubic-bezier(.2, .85, .25, 1) both; }
 .sheet.sheet-out { animation: var(--tr-sheet-out) .3s cubic-bezier(.4, 0, .6, 1) forwards; }
 .app.recede { transform-origin: 50% var(--sy, 0px); animation: var(--tr-recede) .4s cubic-bezier(.2, .85, .25, 1) forwards; }
@@ -1042,7 +1059,7 @@ html.locked, html.locked body { overflow: hidden; }
 @keyframes swapIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @keyframes unlockIn { from { opacity: .6; } to { opacity: 1; } }
 @keyframes dimIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes dimOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes dimOut { from { opacity: var(--dim-o, 1); } to { opacity: 0; } }
 @keyframes calTOpen { from { transform: translateY(var(--dt)); } to { transform: none; } }
 @keyframes calMOpen { from { transform: translateY(var(--dt)) scaleY(var(--k)); } to { transform: none; } }
 @keyframes calBOpen { from { transform: translateY(var(--db)); } to { transform: none; } }
@@ -1055,7 +1072,7 @@ html.locked, html.locked body { overflow: hidden; }
 @keyframes pageOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(calc(var(--px, 28px) * -1)); } }
 @keyframes pageIn { from { opacity: 0; transform: translateX(var(--px, 28px)); } to { opacity: 1; transform: none; } }
 @keyframes sheetIn { from { transform: translateY(100%); } to { transform: none; } }
-@keyframes sheetOut { from { transform: none; } to { transform: translateY(100%); } }
+@keyframes sheetOut { from { transform: translateY(var(--from, 0px)); } to { transform: translateY(100%); } }
 @keyframes sheetRecede { from { transform: none; } to { transform: scale(.92); } }
 @keyframes sheetReturn { from { transform: scale(.92); } to { transform: none; } }
 @keyframes cOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(1.04); } }

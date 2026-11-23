@@ -51,7 +51,8 @@ Jede Runde ab Runde 4 wird mit 25 % zur Spezialrunde, nie zwei hintereinander. H
 ## Eigene Wortlisten
 
 In der App: **Listen & Wörter → Liste hinzufügen** → Namen eingeben (Pflicht), Text einfügen oder Datei (.txt/.csv) wählen.
-Mit **Teilen** entsteht ein Link, den man z. B. per WhatsApp an die Klasse schickt.
+Mit dem **Stift** lässt sich eine Liste später ändern (Name, Wörter hinzufügen/ändern/löschen – eine Zeile pro Paar). Der Fortschritt bleibt, die Fehler gelöschter Wörter verschwinden. Eine geänderte mitgelieferte Liste wird nicht mehr durch App-Updates überschrieben.
+Mit **Teilen** entsteht ein Link, den man z. B. per WhatsApp an die Klasse schickt. Der Link enthält die ganze Liste (~1000 Zeichen für 36 Wörter); die App macht daraus über [is.gd](https://is.gd) einen Kurzlink (die Liste geht dabei an is.gd). Ohne Internet wird der lange Link geteilt – er funktioniert genauso.
 
 Format – eine Zeile pro Wort:
 
@@ -70,7 +71,7 @@ to record - erfassen, aufnehmen
 
 Warmer, ruhiger Stil: Ivory-Hintergrund, dunkle Hauptbuttons, Clay (`#D97757`) nur für „spannende“ Stellen (Zeitbalken, aktuelle Runde, Auswahl, „+10 s“). Hell- und Dunkelmodus folgen dem Handy.
 
-Übergänge: Listen und Einstellungen kommen als Blatt von unten (der Startbildschirm tritt zurück), ein Spiel blendet ruhig ein und aus. Während ein Dialog offen ist, wird auch die Statusleiste abgedunkelt.
+Übergänge: Listen und Einstellungen kommen als Blatt von unten (der Startbildschirm tritt zurück), ein Spiel blendet ruhig ein und aus. Ein Blatt schließt man auch, indem man es oben (Griff oder Titelzeile, die beim Scrollen oben bleiben) nach unten zieht; Scrollen im Inhalt schließt es nie. Die Statusleiste behält immer die Seitenfarbe (sie wird mit Dialogen nicht abgedunkelt – Android färbt sie spürbar später um).
 
 Systemleisten der installierten App: `theme_color` und `background_color` im Manifest sind dunkel (`#262624`). Chrome färbt damit die Navigationsleiste und den Fensterhintergrund (sichtbar z. B. beim Öffnen der Tastatur) – im Manifest gibt es nur eine Farbe für beide Modi. Installierte Apps übernehmen Manifest-Änderungen erst beim nächsten WebAPK-Update (bis ~1 Tag) oder nach Neuinstallation.
 

@@ -728,6 +728,12 @@ export async function decodeData(code) {
   return JSON.parse(new TextDecoder().decode(raw));
 }
 
+/** The words of a list as text for the editor – one pair per line, read back by parseWordList. */
+export function listToText(words) {
+  const sep = words.some((w) => w.en.includes(' – ') || w.de.includes(' – ')) ? '\t' : ' – ';
+  return words.map((w) => w.en + sep + w.de).join('\n');
+}
+
 export function listToShare(list) {
   return { v: 1, n: list.name, w: list.words.map((w) => [w.en, w.de]) };
 }

@@ -375,6 +375,69 @@ async function main() {
   await shot(p2, '13-home-uk');
   await ctx2.close();
 
+  // ---------- 7b. edit a list, share it with a short link, pull a sheet down to close it ----------
+  await page.locator('.list-card .btn', { hasText: 'Listen & Wörter' }).click();
+  await page.waitForSelector('.sheet .list-rows');
+  await page.waitForFunction(() => !document.documentElement.classList.contains('busy'));
+  await page.locator('.list-row', { hasText: 'Testliste' }).locator('.icon-btn[aria-label*="bearbeiten"]').click();
+  await page.waitForSelector('#list-text');
+  assert.equal(await page.locator('#list-name').inputValue(), 'Testliste', 'name filled in');
+  assert.equal((await page.locator('#list-text').inputValue()).split('\n').length, 5, 'words filled in, one per line');
+  assert.ok(await page.locator('.btn', { hasText: 'Änderungen speichern' }).isDisabled(), 'nothing changed yet');
+  const txt = (await page.locator('#list-text').inputValue()).split('\n').filter((l) => !l.startsWith('car')).concat(['bird – Vogel']).join('\n');
+  await page.locator('#list-text').fill(txt);
+  await page.locator('#list-name').fill('Testliste neu');
+  assert.ok((await page.locator('.preview-diff').textContent()).includes('neu: 1 · entfernt: 1'));
+  await shot(page, '11b-edit-list');
+  await page.locator('.btn', { hasText: 'Änderungen speichern' }).click();
+  await page.waitForFunction(() => !document.querySelector('#list-text') && document.querySelector('.list-row.active')?.textContent.includes('Testliste neu'));
+  const words2 = await page.locator('.word-row .w-en').allTextContents();
+  assert.ok(words2.includes('bird') && !words2.includes('car') && words2.length === 5, 'words changed: ' + words2.join(','));
+  // share: a short link from is.gd (faked here), the long one when that fails
+  await page.route('https://is.gd/**', (route) => {
+    const u = new URL(route.request().url());
+    assert.ok(u.searchParams.get('url').includes('#l='), 'the long link goes to is.gd');
+    route.fulfill({ contentType: 'application/javascript', body: u.searchParams.get('callback') + '({"shorturl":"https://is.gd/AbC123"})' });
+  });
+  await page.locator('.list-row.active .icon-btn[aria-label*="teilen"]').click();
+  await page.waitForFunction(() => document.querySelector('.share-url')?.textContent === 'is.gd/AbC123');
+  assert.ok(!(await page.locator('.share-actions .btn.outline').isDisabled()), 'copy ready');
+  await page.waitForTimeout(300);
+  await shot(page, '11c-share');
+  await page.locator('.modal .btn', { hasText: 'Fertig' }).click();
+  await page.waitForFunction(() => !document.querySelector('.modal'));
+  await page.unroute('https://is.gd/**');
+  await page.route('https://is.gd/**', (route) => {
+    const cb = new URL(route.request().url()).searchParams.get('callback');
+    route.fulfill({ contentType: 'application/javascript', body: cb + '({"errorcode":3,"errormessage":"Rate limit"})' });
+  });
+  // (the short link of a list is remembered, so another list here)
+  await page.locator('.list-row', { hasText: 'KA1' }).locator('.icon-btn[aria-label*="teilen"]').click();
+  await page.waitForFunction(() => document.querySelector('.share-note')?.textContent.includes('nicht möglich'));
+  assert.ok((await page.locator('.share-url').textContent()).includes('#l='), 'long link as a fallback');
+  await page.locator('.modal .btn', { hasText: 'Fertig' }).click();
+  await page.waitForFunction(() => !document.querySelector('.modal'));
+  await page.unroute('https://is.gd/**');
+  // pull down: from the content nothing happens, a short pull springs back, a long one from the top closes
+  const sheetBox = await page.locator('.sheet').boundingBox();
+  // a slow pull (a quick flick closes the sheet even when it is short)
+  const drag = async (x, y, dy) => {
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    for (let i = 1; i <= 8; i++) { await page.mouse.move(x, y + (dy * i) / 8); await page.waitForTimeout(40); }
+    await page.waitForTimeout(120);
+    await page.mouse.up();
+  };
+  await drag(sheetBox.x + 100, sheetBox.y + 260, 300);
+  await page.waitForTimeout(400);
+  assert.ok(await page.locator('.sheet').count(), 'dragging the content does not close the sheet');
+  await drag(sheetBox.x + 200, sheetBox.y + 6, 60);
+  await page.waitForTimeout(400);
+  assert.ok(await page.locator('.sheet').count(), 'a short pull springs back');
+  assert.equal(await page.locator('.sheet').evaluate((e) => e.style.transform), '', 'back at the top');
+  await drag(sheetBox.x + 200, sheetBox.y + 30, 380);
+  await page.waitForFunction(() => document.querySelector('.home') && !document.querySelector('.sheet') && !document.documentElement.classList.contains('busy'));
+
   // words screen + settings render
   await page.locator('.list-card .btn', { hasText: 'Listen & Wörter' }).click();
   await page.locator('.list-main', { hasText: 'KA1 E Vorbereitung' }).click();
@@ -650,11 +713,12 @@ async function main() {
   await page.waitForFunction(() => document.querySelector('.home') && !document.querySelector('.sheet') && !document.documentElement.classList.contains('busy'));
 
   // ---------- 8f. sheets, status bar, calendar ----------
+  // the status bar keeps the page colour (no dimming with dialogs)
   const statusBar = () => page.evaluate(() => document.querySelector('meta[name="theme-color"][media*="light"]').getAttribute('content'));
   await page.locator('.list-card .btn', { hasText: 'Listen & Wörter' }).click();
   await page.waitForSelector('.sheet .list-rows');
   assert.ok(await page.locator('.app.recede').count(), 'the start screen recedes behind the sheet');
-  assert.equal(await statusBar(), '#999996', 'status bar dimmed with the sheet');
+  assert.equal(await statusBar(), '#FAF9F5', 'status bar keeps the page colour with a sheet');
   await page.goBack();
   await page.waitForFunction(() => !document.querySelector('.sheet'));
   assert.equal(await statusBar(), '#FAF9F5', 'status bar back to normal');

@@ -60,8 +60,11 @@ function mergeBuiltins() {
     const words = parseWordList(b.text).words;
     const existing = state.lists[b.id];
     if (existing) {
-      existing.words = words;
-      existing.name = b.name;
+      // a list the user changed (fromBuiltin) stays as it is
+      if (existing.builtin) {
+        existing.words = words;
+        existing.name = b.name;
+      }
     } else {
       state.lists[b.id] = { id: b.id, name: b.name, words, builtin: true };
       state.order.splice(Math.min(i, state.order.length), 0, b.id);
@@ -122,9 +125,26 @@ export function addList(list) {
   save();
 }
 
+/**
+ * The user changed name and/or words. The id stays, so progress and the mistakes of the words that
+ * stay are kept; mistakes of removed words go. A built-in list becomes the user's own (no update
+ * from the app overwrites it any more).
+ */
+export function updateList(id, { name, words }) {
+  const l = state.lists[id];
+  if (!l) return;
+  l.name = name;
+  l.words = words;
+  if (l.builtin) { l.builtin = false; l.fromBuiltin = true; }
+  const keep = new Set(words.map((w) => w.id));
+  const st = state.stats[id];
+  if (st) for (const k of Object.keys(st)) if (!keep.has(k)) delete st[k];
+  save();
+}
+
 export function deleteList(id) {
   if (!state.lists[id]) return;
-  if (state.lists[id].builtin) state.removedBuiltins.push(id);
+  if (state.lists[id].builtin || state.lists[id].fromBuiltin) state.removedBuiltins.push(id);
   delete state.lists[id];
   delete state.progress[id];
   delete state.fixed[id];

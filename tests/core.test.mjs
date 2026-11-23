@@ -7,7 +7,7 @@ import {
   encodeData, decodeData, listToShare, listFromShare, primaryForm, answerDiff, variants, allVariants, gapTargets,
   ENDLESS, MOD_TYPES, stepValue, applyBonus, komboNext, rollModifier, fitTypeToMod, placeNewPairs, wirbelOrder, trainingTypes, trainingPick,
   trainingSession, TRAINING_MAX, streakInfo, bestStreak, missedDay, weekView, monthGrid, addDays, weekday, shiftMonth,
-  BOMB, bombClock, bombLayout,
+  BOMB, bombClock, bombLayout, listToText,
 } from '../js/core.js';
 import { BUILTIN_LISTS } from '../js/builtin-lists.js';
 
@@ -367,4 +367,14 @@ test('Zeitbombe: clock with hundredths, board split left/right', () => {
       assert.deepEqual(cells.filter((c) => c.w === w).map((c) => c.side).sort(), ['de', 'en']);
     }
   }
+});
+
+test('list editor: words as text and back without changes', () => {
+  const words = parseWordList(BUILTIN_LISTS[0].text).words;
+  const back = parseWordList(listToText(words)).words;
+  assert.deepEqual(back.map((w) => w.id), words.map((w) => w.id));
+  // a word with " – " inside: tab-separated instead
+  const odd = [{ id: 'a', en: 'one – two', de: 'eins' }, { id: 'b', en: 'dog', de: 'Hund' }];
+  const r = parseWordList(listToText(odd)).words;
+  assert.deepEqual(r.map((w) => [w.en, w.de]), [['one – two', 'eins'], ['dog', 'Hund']]);
 });

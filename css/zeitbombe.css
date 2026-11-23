@@ -34,7 +34,7 @@
   --zb-a-fill: zbFill; --zb-a-burn: zbBurn; --zb-a-flicker: zbFlicker; --zb-a-snuff: zbSnuff; --zb-a-smoke: zbSmoke;
   --zb-a-pip: popIn; --zb-a-wave: zbWave; --zb-a-cover: zbFadeOut; --zb-a-word: zbFadeIn;
   --zb-a-ok: pop; --zb-a-gone: vanish; --zb-a-new: enter; --zb-a-wrong: zbShake; --zb-a-clunk: zbClunk; --zb-a-dim: zbDim;
-  --zb-a-beat: zbBeat; --zb-a-jolt: zbJolt; --zb-a-fall: zbFall;
+  --zb-a-beat: zbBeat;
 }
 /* Ohne Bewegung: nur Ein- und Ausblenden. Der Zeitbalken läuft weiter – er ist Information. */
 @media (prefers-reduced-motion: reduce) {
@@ -44,14 +44,14 @@
     --zb-a-fill: none; --zb-a-flicker: none; --zb-a-snuff: zbFadeOut; --zb-a-smoke: none;
     --zb-a-pip: zbFadeIn; --zb-a-wave: none;
     --zb-a-ok: none; --zb-a-gone: zbFadeOut; --zb-a-new: zbFadeIn; --zb-a-wrong: none; --zb-a-clunk: none;
-    --zb-a-beat: none; --zb-a-jolt: none; --zb-a-fall: zbFadeOut;
+    --zb-a-beat: none;
   }
   /* style.css setzt .tile dort mit !important auf fadeIn – für die Bombe gezielt überschreiben */
   .zb-tile { animation: none !important; }
   .zb-tile.new { animation: zbFadeIn .2s ease var(--d, 0ms) both !important; }
   .zb-tile.gone, .zb-board.swap-out .zb-tile { animation: zbFadeOut .16s ease forwards !important; }
   .zb-board.locked .zb-tile:not(.wrong) { animation: zbDim 1s linear both !important; }
-  .zb-board.zb-blast .zb-tile { animation: zbFadeOut .2s ease calc(200ms + var(--k, 0) * 60ms) both !important; }
+  .zb-board.zb-blast .zb-tile { animation: none !important; }
 }
 
 /* ---------- Gerüst ---------- */
@@ -197,15 +197,9 @@
 /* ---------- Explosion ohne Grafik: Plättchen zucken (Trägheit), dann fallen sie nacheinander (≤ 1,1 s, dann Dialog) ---------- */
 .game.zb-dead { overflow: clip; }  /* fallende Plättchen erzeugen keine Scrollfläche */
 .zb-board.zb-blast { pointer-events: none; }
-/* Reihenfolge: unten zuerst, im Zickzack – JS darf --k auch selbst setzen */
-.zb-board.zb-blast > :nth-child(8) { --k: 0; } .zb-board.zb-blast > :nth-child(7) { --k: 1; }
-.zb-board.zb-blast > :nth-child(5) { --k: 2; } .zb-board.zb-blast > :nth-child(6) { --k: 3; }
-.zb-board.zb-blast > :nth-child(4) { --k: 4; } .zb-board.zb-blast > :nth-child(3) { --k: 5; }
-.zb-board.zb-blast > :nth-child(1) { --k: 6; } .zb-board.zb-blast > :nth-child(2) { --k: 7; }
-.zb-board.zb-blast .zb-tile {  /* --fr (±10…18°) und --fx (±10…18 px) setzt JS zufällig je Plättchen */
-  animation: var(--zb-a-jolt) .2s ease-in-out both, var(--zb-a-fall) .44s cubic-bezier(.55, 0, 1, .45) calc(200ms + var(--k, 0) * 60ms) forwards;
-}
-.zb-board.zb-blast .zb-slot { animation: zbFadeOut .2s ease-in both; }
+/* Zucken + Fallen läuft per Web Animations (bomb.js → blast()): EINE transform-Animation je Plättchen,
+   damit Chrome sie auf dem Compositor abspielt. Hier nur: keine CSS-Animation, keine Transition. */
+.zb-board.zb-blast .zb-tile { animation: none; transition: none; will-change: transform, opacity; }
 
 /* ---------- Keyframes ---------- */
 @keyframes zbFadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -226,5 +220,3 @@
 @keyframes zbClunk { 0%, 100% { transform: none; } 35% { transform: translateY(3px); } 70% { transform: translateY(-1px); } }
 @keyframes zbDim { 0% { opacity: 1; } 10%, 88% { opacity: .45; } 100% { opacity: 1; } }
 @keyframes zbBeat { 0% { transform: scale(1); } 30% { transform: scale(1.07); } 100% { transform: scale(1); } }
-@keyframes zbJolt { 0%, 100% { transform: none; } 25% { transform: translate(calc(var(--fx, 0px) * -.2), -3px) rotate(calc(var(--fr, 0deg) * -.2)); } 55% { transform: translate(calc(var(--fx, 0px) * .15), 2px) rotate(calc(var(--fr, 0deg) * .15)); } 80% { transform: rotate(calc(var(--fr, 0deg) * -.06)); } }
-@keyframes zbFall { 0% { opacity: 1; transform: none; } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--fx, 0px), 760px) rotate(var(--fr, 0deg)); } }
