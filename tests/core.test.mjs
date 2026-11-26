@@ -391,11 +391,21 @@ test('Artikel: nouns with der/die/das, rounds with the hard ones first', () => {
   assert.equal(items.find((it) => it.noun === 'Lager').article, 'das');
   const odd = articleItems([{ id: 'x', en: 'consumer', de: 'der/die Verbraucher/-in' }, { id: 'y', en: 'data', de: 'die Daten (Pl.)' }]);
   assert.equal(odd.length, 0);
-  // a round: 12 nouns, every word at most once, nouns with mistakes first
+  // a round: 40 nouns; a list with fewer: every noun once
+  assert.equal(ARTICLE_SESSION, 40);
+  assert.ok(items.length < ARTICLE_SESSION);
+  for (let i = 0; i < 20; i++) {
+    const s = articleSession(items, {});
+    assert.equal(s.length, items.length, 'all nouns of the list');
+    assert.equal(new Set(s.map((it) => it.key)).size, s.length, 'no noun twice');
+  }
+  const big = Array.from({ length: 60 }, (_, i) => ({ key: 'w' + i + ':N' + i, w: { id: 'w' + i }, article: 'der', noun: 'N' + i }));
+  assert.equal(articleSession(big, {}).length, 40);
+  // a shorter round: every word at most once, nouns with mistakes first
   const hardKey = items[items.length - 1].key;
   for (let i = 0; i < 50; i++) {
-    const s = articleSession(items, { [hardKey]: 2 });
-    assert.equal(s.length, ARTICLE_SESSION);
+    const s = articleSession(items, { [hardKey]: 2 }, 12);
+    assert.equal(s.length, 12);
     assert.equal(new Set(s.map((it) => it.w.id)).size, s.length, 'one noun per word');
     assert.ok(s.some((it) => it.key === hardKey), 'the noun with mistakes is in the round');
   }

@@ -1255,7 +1255,12 @@ html.locked, html.locked body { overflow: hidden; }
 .art-of { font-size: 22px; color: var(--muted); }
 .art-wrong { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 6px; }
 .art-wrong-head { margin: 0; font-size: 13.5px; font-weight: 700; color: var(--muted); }
-.art-wrong-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 8px 12px; border-radius: 10px; background: var(--surface2); font-size: 15px; }
+.art-wrong-list { display: flex; flex-direction: column; gap: 6px; max-height: min(220px, 24dvh); overflow-y: auto; overscroll-behavior: contain; }
+.art-wrong-note { margin: 2px 0 0; display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); }
+.art-wrong-note .icon { width: 15px; height: 15px; flex: none; color: var(--accent); }
+/* a long list of mistakes: no big icon on low screens, so the buttons stay in view */
+@media (max-height: 760px) { .modal.art-has-wrong .modal-icon { display: none; } }
+.art-wrong-row { flex: none; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 8px 12px; border-radius: 10px; background: var(--surface2); font-size: 15px; }
 .art-wrong-row b { color: var(--art); }
 .art-wrong-en { font-size: 13px; color: var(--muted); text-align: right; }
 @media (prefers-reduced-motion: reduce) { .art-btn.right, .art-btn.wrong { animation: none; } }

@@ -1297,7 +1297,7 @@ export class Game {
     ];
     if (res.newRecord) lines.push(h('span', { class: 'record-chip' }, icon('star'), t('newRecord')));
     if (res.unlocked) lines.push(h('p', { class: 'unlock-line' }, icon('check'), t('unlocked', { level: t('level_' + res.unlocked) })));
-    if (res.endless) lines.push(h('p', { class: 'unlock-line' }, icon('check'), t('endlessUnlockedAll')));
+    if (res.endless) lines.push(h('p', { class: 'unlock-line' }, icon('check'), t('endlessUnlockedList')));
     lines.push(h('p', { class: 'modal-text new-words' }, t('newFixed')));
     if (!next) lines.push(h('p', { class: 'modal-text' }, t('allDone')));
     lines.push(this.streakChip(store.countToday()));

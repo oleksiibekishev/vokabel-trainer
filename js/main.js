@@ -10,7 +10,7 @@ import { ArticleGame } from './artikel.js';
 import * as streakUI from './streak.js';
 import { openIntro, closeIntro, introIsOpen } from './intro.js';
 
-export const APP_VERSION = '1.10.1';
+export const APP_VERSION = '1.11.0';
 
 const app = document.getElementById('app');
 let game = null;
@@ -202,7 +202,7 @@ function levelStates(list) {
   if (!list) return null;
   const st = {};
   for (const lvl of LEVEL_IDS) st[lvl] = !store.isUnlocked(list.id, lvl) ? 'locked' : store.levelProgress(list.id, lvl).completed ? 'done' : 'open';
-  st.endless = store.endlessUnlocked() ? 'open' : 'locked';
+  st.endless = store.endlessUnlocked(list.id) ? 'open' : 'locked';
   return st;
 }
 
@@ -210,7 +210,7 @@ function levelStates(list) {
 async function startGame({ level, focus = [], fromGame = false } = {}) {
   const list = store.currentList();
   const allowed = list && (level === 'artikel' ? articleItems(list.words, listLangs(list)).length >= ARTICLE_MIN : list.words.length >= MIN_WORDS && (
-    level === 'endless' ? store.endlessUnlocked()
+    level === 'endless' ? store.endlessUnlocked(list.id)
       : level === 'training' ? store.mistakeWords(list.id, list.words).length > 0
         : LEVEL_IDS.includes(level) && store.isUnlocked(list.id, level)));
   if (!allowed) { await doShow('home'); return; }
@@ -389,7 +389,7 @@ function renderHome() {
 
 /** Endlos and Fehlertraining below the levels. */
 function modesSection(list, enough) {
-  const endlessOpen = store.endlessUnlocked();
+  const endlessOpen = store.endlessUnlocked(list.id);
   const ep = store.endlessProgress(list.id);
   const mistakes = store.mistakeWords(list.id, list.words).length;
   const card = ({ id, playable, desc, status, statusCls, play, badge }) => h('button', {

@@ -20,7 +20,7 @@ Auf dem Handy installieren:
 - Ein Fehler → zurück zu Runde 1 (mit Animation, was falsch war).
 - Runde 1–3 haben dieselben Wörter, bis man das Level schafft – danach werden sie neu gemischt (andere Wörter). Ab Runde 4 immer zufällig.
 - „Mittel“ wird nach „Leicht“ freigeschaltet, „Schwer“ nach „Mittel“ – pro Wortliste.
-- „Endlos“ öffnet sich, sobald „Mittel“ in irgendeiner Liste geschafft ist – dann für alle Listen und für immer (auch nach „Fortschritt zurücksetzen“).
+- „Endlos“ öffnet sich pro Wortliste, sobald „Mittel“ in dieser Liste geschafft ist (seit 1.11; vorher galt eine einmalige Freischaltung für alle Listen). Nach „Fortschritt zurücksetzen“ ist es wieder gesperrt.
 - Wörter mit Fehlern kommen öfter dran.
 - Die Zeiten sind fest (eigene Zeiten in den Einstellungen gibt es seit 1.9 nicht mehr).
 
@@ -42,8 +42,8 @@ Die Zeitbombe lässt sich in den Einstellungen abschalten (Schalter „Zeitbombe
 ### Weitere Modi
 
 - **Endlos** (nach „Mittel“, siehe oben): Runden ohne Ende mit allen Spielen, Start 30 s, **kein Limit**. Bonus: +10 s bis Runde 10, +8 s bis 20, +6 s bis 30, danach +5 s. Spezialrunden werden häufiger (25 % → 50 %), Zeitraffer ab Runde 21 2×. Ein Fehler beendet das Spiel, Rekord = geschaffte Runden.
-- **Fehlertraining**: nur Wörter mit Fehlern, ohne Zeit, höchstens 10 Wörter pro Durchgang (die schwierigsten zuerst). Jedes Wort muss 3× richtig sein (Auswahl → Lücken → Schreiben), dann steht sein Fehlerzähler wieder auf 0. Ein Fehler schickt das Wort zurück an den Anfang. Im Fehler-Fenster eines Levels startet „Dieses Wort üben“ das Fehlertraining mit genau diesem Wort.
-- **Artikel** (von Anfang an offen): der, die oder das? 12 Nomen der aktuellen Liste pro Runde, ohne Zeit; das englische Wort steht als Hilfe darunter (z. B. „Lager – stock“). Ein Fehler beendet die Runde nicht: die richtige Antwort wird gezeigt, am Ende stehen die falschen Nomen mit Artikel, „Fehler wiederholen“ übt genau diese. Nomen mit Fehlern kommen in der nächsten Runde zuerst (höchstens die Hälfte). Genommen werden alle deutschen Übersetzungen, die mit der/die/das beginnen – ohne Plural-Markierung („die Daten (Pl.)“), Klammern oder Doppelformen („der/die Verbraucher/-in“). Braucht mindestens 4 solche Nomen in der Liste. Zählt für die Tagesserie.
+- **Fehlertraining**: nur Wörter mit Fehlern, ohne Zeit, höchstens 10 Wörter pro Durchgang (die schwierigsten zuerst). Jedes Wort muss 3× richtig sein (Auswahl → Lücken → Schreiben), dann steht sein Fehlerzähler wieder auf 0. Ein Fehler schickt das Wort zurück an den Anfang. Im Fehler-Fenster eines Levels startet „Dieses Wort üben“ das Fehlertraining mit genau diesem Wort. Auch ein falscher Artikel im Modus „Artikel“ zählt als Fehler des Wortes und bringt es ins Fehlertraining.
+- **Artikel** (von Anfang an offen): der, die oder das? 40 Nomen der aktuellen Liste pro Runde (hat die Liste weniger, kommt jedes Nomen einmal), ohne Zeit; das englische Wort steht als Hilfe darunter (z. B. „Lager – stock“). Ein Fehler beendet die Runde nicht: die richtige Antwort wird gezeigt, am Ende stehen die falschen Nomen mit Artikel (scrollbare Liste), „Fehler wiederholen“ übt genau diese; ihre Wörter landen außerdem im Fehlertraining. Nomen mit Fehlern kommen in der nächsten Runde zuerst (höchstens die Hälfte). Genommen werden alle deutschen Übersetzungen, die mit der/die/das beginnen – ohne Plural-Markierung („die Daten (Pl.)“), Klammern oder Doppelformen („der/die Verbraucher/-in“). Braucht mindestens 4 solche Nomen in der Liste. Zählt für die Tagesserie.
 
 ### Tagesserie
 

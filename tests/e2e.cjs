@@ -283,7 +283,7 @@ async function main() {
   // ---------- 3. medium: mixed grid + all game types ----------
   const medTypes = await playLevel('medium', '06-medium');
   assert.ok(medTypes.includes('gaps') && medTypes.includes('choice') && !medTypes.includes('spell'), 'medium: gaps, no spelling');
-  assert.ok((await page.locator('.modal-win').textContent()).includes('Endlos'), 'Endlos is opened for all lists');
+  assert.ok((await page.locator('.modal-win').textContent()).includes('„Endlos“ ist jetzt für diese Liste frei'), 'Endlos is opened for this list');
   assert.ok((await page.locator('.modal-win .st-chip').textContent()).includes('1 Tag'), 'Tagesserie chip in the result');
   await page.locator('.modal .btn', { hasText: 'Menü' }).click();
   await page.waitForSelector('.home');
@@ -654,10 +654,10 @@ async function main() {
   await page.locator('.modal .btn', { hasText: 'Beenden' }).click();
   await page.waitForSelector('.home');
 
-  // ---------- 8d. Endlos: open since "Mittel" was passed, no limit, smaller bonus from round 11 ----------
+  // ---------- 8d. Endlos: open since "Mittel" was passed in this list, no limit, smaller bonus from round 11 ----------
   await page.evaluate(() => { window.__vtMods = 'off'; });
   assert.ok(!(await page.locator('.mode-card.mode-endless').isDisabled()), 'Endlos is open after Mittel');
-  assert.ok(await page.evaluate(() => JSON.parse(localStorage.getItem('vokabeltrainer.v1')).unlocks.endless === true), 'saved for good');
+  assert.ok(await page.evaluate(() => !('unlocks' in JSON.parse(localStorage.getItem('vokabeltrainer.v1')))), 'no global unlock any more');
   await shot(page, '25-home-modes');
   await page.locator('.mode-card.mode-endless').click();
   await page.waitForSelector('.board');
@@ -814,10 +814,18 @@ async function main() {
   await page.locator('.mode-card.mode-artikel').click();
   await page.waitForSelector('.art-btn');
   assert.equal(await page.locator('.art-btn').count(), 3);
-  assert.ok((await page.locator('.game-round').textContent()).includes('von 12'));
+  const artN = await page.evaluate(() => window.__vtGame.items.length);
+  assert.equal(artN, 34, 'the built-in list has 34 nouns (< 40): all of them');
+  assert.ok((await page.locator('.game-round').textContent()).includes('von ' + artN));
+  const mistakesOf = (wid) => page.evaluate((id) => {
+    const s = JSON.parse(localStorage.getItem('vokabeltrainer.v1'));
+    const st = s.stats[s.currentListId] || {};
+    return st[id] ? st[id].w : 0;
+  }, wid);
   let artWrong = null;
-  for (let q = 0; q < 12; q++) {
-    const it = await page.evaluate(() => { const g = window.__vtGame; const x = g.items[g.i]; return { a: x.article, n: x.noun }; });
+  for (let q = 0; q < artN; q++) {
+    const it = await page.evaluate(() => { const g = window.__vtGame; const x = g.items[g.i]; return { a: x.article, n: x.noun, wid: x.w.id }; });
+    if (q === 0) it.before = await mistakesOf(it.wid);
     const choose = q === 0 ? ['der', 'die', 'das'].find((x) => x !== it.a) : it.a;
     await page.locator('.art-btn.art-' + choose).click();
     if (q === 0) {
@@ -825,12 +833,14 @@ async function main() {
       assert.ok(await page.locator('.art-btn.wrong').count() && await page.locator('.art-btn.right.reveal').count(), 'wrong + right answer shown');
       assert.equal((await page.locator('.art-word').textContent()).replace(/\s+/g, ' ').trim(), it.a + ' ' + it.n, 'the full noun with its article');
       assert.equal(await page.locator('.modal').count(), 0, 'a mistake does not end the round');
+      assert.equal(await mistakesOf(it.wid), it.before + 1, 'the wrong article counts as a mistake of the word (Fehlertraining)');
     }
     await page.waitForFunction((qq) => window.__vtGame.i > qq || window.__vtGame.ended, q, { timeout: 4000 });
   }
   await page.waitForSelector('.modal .big-number');
-  assert.ok((await page.locator('.modal').textContent()).includes('11 von 12'));
+  assert.ok((await page.locator('.modal').textContent()).includes((artN - 1) + ' von ' + artN));
   assert.ok((await page.locator('.art-wrong-row').textContent()).includes(artWrong.a + ' ' + artWrong.n), 'the mistake is listed with its article');
+  assert.ok((await page.locator('.art-wrong-note').textContent()).includes('Fehlertraining'), 'note: the word is in the Fehlertraining');
   await shot(page, '33-artikel-end');
   await page.locator('.modal .btn', { hasText: 'Fehler wiederholen (1)' }).click();
   await page.waitForFunction(() => window.__vtGame && !window.__vtGame.ended && window.__vtGame.items.length === 1);
@@ -839,6 +849,11 @@ async function main() {
   await page.locator('.modal .btn', { hasText: 'Menü' }).click();
   await page.waitForSelector('.home');
   assert.ok((await page.locator('.mode-card.mode-artikel').textContent()).includes('Zuletzt'), 'last result on the card');
+  assert.ok(!(await page.locator('.mode-card.mode-training').isDisabled()), 'Fehlertraining is open with the word');
+  assert.ok(await page.evaluate((wid) => {
+    const s = JSON.parse(localStorage.getItem('vokabeltrainer.v1'));
+    return (s.stats[s.currentListId][wid] || {}).w > 0;
+  }, artWrong.wid), 'the word waits in the Fehlertraining');
 
   // ---------- 8h3. a German–Ukrainian list: languages are recognized, Artikel uses the left column ----------
   await page.locator('.list-card .btn', { hasText: 'Listen & Wörter' }).click();
@@ -858,6 +873,8 @@ async function main() {
   await page.goBack();
   await page.waitForFunction(() => document.querySelector('.home') && !document.querySelector('.sheet') && !document.documentElement.classList.contains('busy'));
   assert.ok(!(await page.locator('.mode-card.mode-artikel').isDisabled()), 'Artikel finds the German nouns on the left');
+  assert.ok(await page.locator('.mode-card.mode-endless').isDisabled(), 'Endlos: locked in a new list (Mittel not passed here)');
+  assert.ok((await page.locator('.mode-card.mode-endless').textContent()).includes('nach Mittel'));
   await page.locator('.mode-card.mode-artikel').click();
   await page.waitForSelector('.art-btn');
   assert.equal(await page.locator('.art-hint').getAttribute('lang'), 'uk', 'the hint is the Ukrainian word');
@@ -873,7 +890,7 @@ async function main() {
   await page.goBack();
   await page.waitForFunction(() => document.querySelector('.home') && !document.querySelector('.sheet') && !document.documentElement.classList.contains('busy'));
 
-  // ---------- 8i. "Fortschritt zurücksetzen": Endlos stays open (for every list) ----------
+  // ---------- 8i. "Fortschritt zurücksetzen": levels and Endlos are locked again ----------
   await page.locator('.home-top .icon-btn').click();
   await page.waitForSelector('.sheet .switch');
   await page.locator('.btn', { hasText: 'Fortschritt zurücksetzen' }).click();
@@ -881,7 +898,7 @@ async function main() {
   await page.goBack();
   await page.waitForFunction(() => !document.querySelector('.sheet'));
   assert.ok(await page.locator('.level-card.level-medium').isDisabled(), 'levels are locked again');
-  assert.ok(!(await page.locator('.mode-card.mode-endless').isDisabled()), 'Endlos stays open');
+  assert.ok(await page.locator('.mode-card.mode-endless').isDisabled(), 'Endlos is locked again (opens after Mittel)');
   assert.equal(await page.locator('.streak-chip .roll').textContent(), '0', 'Tagesserie starts again');
 
   // ---------- 8. Android back button during a game asks before quitting ----------

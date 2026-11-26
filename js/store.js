@@ -22,9 +22,6 @@ function defaults() {
     // Tagesserie: every day with a finished game (local "YYYY-MM-DD"); shown = the number last shown on the start screen
     days: [],
     streak: { best: 0, shown: 0, brokeOn: null },
-    // Endlos opens for every list as soon as "Mittel" was passed in any list – and stays open
-    // (also after "Fortschritt zurücksetzen" or deleting the list)
-    unlocks: { endless: false },
     // introSeen: the Einführung was shown once (first start); it can be opened again in the settings
     settings: { lang: null, sound: true, vibrate: true, iosHintDismissed: false, zeitbombe: true, introSeen: false },
   };
@@ -39,8 +36,8 @@ function sanitize(s) {
   out.settings = { ...d.settings, ...(s.settings || {}) };
   delete out.settings.timing; // own level times (until 1.8) are gone
   delete out.settings.rulesClosed; // the "So funktioniert's" box is now the Einführung
-  for (const k of ['lists', 'progress', 'fixed', 'stats', 'unlocks', 'articles']) if (!out[k] || typeof out[k] !== 'object') out[k] = {};
-  out.unlocks = { endless: out.unlocks.endless === true };
+  for (const k of ['lists', 'progress', 'fixed', 'stats', 'articles']) if (!out[k] || typeof out[k] !== 'object') out[k] = {};
+  delete out.unlocks; // until 1.10 Endlos opened for all lists at once; now per list (see endlessUnlocked)
   out.days = Array.isArray(out.days) ? [...new Set(out.days.filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)))].sort() : [];
   out.streak = { ...d.streak, ...(out.streak && typeof out.streak === 'object' ? out.streak : {}) };
   if (!Array.isArray(out.order)) out.order = [];
@@ -202,7 +199,7 @@ export function isUnlocked(listId, level) {
   return levelProgress(listId, LEVEL_IDS[i - 1]).completed;
 }
 
-/** Returns { newRecord, unlocked, endless } (endless: Endlos was opened just now) */
+/** Returns { newRecord, unlocked, endless } (endless: Endlos was opened just now for this list) */
 export function recordResult(listId, level, { completed, timeLeft, round }) {
   const p = (state.progress[listId] = state.progress[listId] || {});
   const cur = levelProgress(listId, level);
@@ -215,10 +212,7 @@ export function recordResult(listId, level, { completed, timeLeft, round }) {
       const i = LEVEL_IDS.indexOf(level);
       if (i < LEVEL_IDS.length - 1) unlocked = LEVEL_IDS[i + 1];
     }
-    if (level === 'medium' && !state.unlocks.endless) {
-      state.unlocks.endless = true;
-      endless = true;
-    }
+    if (level === 'medium' && !cur.completed) endless = true;
     if (cur.bestTimeLeft == null || timeLeft > cur.bestTimeLeft) {
       newRecord = cur.bestTimeLeft != null;
       next.bestTimeLeft = timeLeft;
@@ -230,7 +224,7 @@ export function recordResult(listId, level, { completed, timeLeft, round }) {
   return { newRecord, unlocked, endless };
 }
 
-/** Levels, records, mistakes and the Tagesserie start again; Endlos stays open where it was open. */
+/** Levels, records, mistakes and the Tagesserie start again (Endlos too: it opens again after "Mittel"). */
 export function resetProgress() {
   state.progress = {};
   state.fixed = {};
@@ -263,14 +257,9 @@ export function renewFixedRounds(listId, level, words) {
 
 // ---------- Endlos ----------
 
-/** Endlos: open for all lists once "Mittel" was passed in any list; it never closes again. */
-export function endlessUnlocked() {
-  if (state.unlocks.endless) return true;
-  const passed = Object.keys(state.progress).some((id) => levelProgress(id, 'medium').completed);
-  if (!passed) return false;
-  state.unlocks.endless = true;
-  save();
-  return true;
+/** Endlos: open in a list once "Mittel" was passed in that list. */
+export function endlessUnlocked(listId) {
+  return !!listId && levelProgress(listId, 'medium').completed;
 }
 
 export function endlessProgress(listId) {

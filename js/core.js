@@ -30,7 +30,7 @@ export const LEVELS = {
   },
 };
 
-/** "Endlos": unlocked after "Schwer". No time limit, the round bonus gets smaller. */
+/** "Endlos": opens in a list once "Mittel" was passed in that list. No time limit, the round bonus gets smaller. */
 export const ENDLESS = {
   start: 30, cap: 0, mixed: true, gapRatio: 0.5, keepFirst: false,
   bonusSteps: [[1, 10], [11, 8], [21, 6], [31, 5]],
@@ -218,7 +218,7 @@ export function listLangs(list) {
 // ---------- Artikel (der, die, das) ----------
 
 export const ARTICLES = ['der', 'die', 'das'];
-export const ARTICLE_SESSION = 12;
+export const ARTICLE_SESSION = 40;
 export const ARTICLE_MIN = 4;
 
 /**

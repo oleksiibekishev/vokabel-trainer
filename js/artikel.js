@@ -1,5 +1,6 @@
-// Artikel mode: der, die or das for the nouns of the current list. 12 nouns per round, no timer,
-// a mistake does not end the round. Nouns with mistakes come first next time.
+// Artikel mode: der, die or das for the nouns of the current list. 40 nouns per round (fewer lists: all
+// nouns once), no timer, a mistake does not end the round. Nouns with mistakes come first next time,
+// and their words go into the Fehlertraining (like a mistake in the other games).
 // Same outside shape as Game (start, destroy, holdFor, askQuit, ended/destroyed) for main.js.
 
 import { ARTICLES, ARTICLE_SESSION, articleItems, articleSession, listLangs } from './core.js';
@@ -119,6 +120,7 @@ export class ArticleGame {
     } else {
       btn.classList.add('wrong');
       rightBtn.classList.add('right', 'reveal');
+      store.bumpStat(this.list.id, it.w.id, false); // → Fehlertraining
       sfx.bump();
       if (!this.wrong.includes(it)) this.wrong.push(it);
       this.streak = 0;
@@ -150,9 +152,10 @@ export class ArticleGame {
           : this.bestStreak >= 2 ? h('p', { class: 'modal-text' }, t('artikelBest', { n: this.bestStreak })) : null),
       this.wrong.length ? h('div', { class: 'art-wrong' },
         h('p', { class: 'art-wrong-head' }, t('artikelWrongHead')),
-        this.wrong.map((it) => h('div', { class: 'art-wrong-row' },
+        h('div', { class: 'art-wrong-list' }, this.wrong.map((it) => h('div', { class: 'art-wrong-row' },
           h('span', { lang: 'de' }, h('b', { class: 'art-' + it.article }, it.article), ' ' + it.noun),
-          h('span', { class: 'art-wrong-en', lang: it.hintLang }, it.hint)))) : null,
+          h('span', { class: 'art-wrong-en', lang: it.hintLang }, it.hint)))),
+        h('p', { class: 'art-wrong-note' }, icon('training'), t('artikelToTraining'))) : null,
       st.plus ? h('div', { class: 'st-chip-row' }, h('span', { class: 'st-chip' }, icon('streak'),
         t('streakChip') + ' ', h('b', null, st.n + ' ' + tDays(st.n)), h('span', { class: 'st-plus' }, '+1'))) : null);
     const buttons = [[{ label: t('menu'), value: 'menu', kind: 'outline' }, { label: t('again'), value: 'again', kind: 'primary', grow: true }]];
@@ -163,7 +166,7 @@ export class ArticleGame {
       center: true,
       body,
       buttons,
-      cls: 'modal-end ' + (all ? 'modal-win' : ''),
+      cls: 'modal-end art-end' + (all ? ' modal-win' : '') + (this.wrong.length ? ' art-has-wrong' : ''),
     }).then((v) => {
       if (this.destroyed) return;
       if (v === 'again' || v === 'retry') {
