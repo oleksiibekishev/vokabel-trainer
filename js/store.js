@@ -17,6 +17,8 @@ function defaults() {
     progress: {},
     fixed: {},
     stats: {},
+    // Artikel mode per list: { last: { right, total }, best: best streak, miss: { itemKey: count } }
+    articles: {},
     // Tagesserie: every day with a finished game (local "YYYY-MM-DD"); shown = the number last shown on the start screen
     days: [],
     streak: { best: 0, shown: 0, brokeOn: null },
@@ -37,7 +39,7 @@ function sanitize(s) {
   out.settings = { ...d.settings, ...(s.settings || {}) };
   delete out.settings.timing; // own level times (until 1.8) are gone
   delete out.settings.rulesClosed; // the "So funktioniert's" box is now the Einführung
-  for (const k of ['lists', 'progress', 'fixed', 'stats', 'unlocks']) if (!out[k] || typeof out[k] !== 'object') out[k] = {};
+  for (const k of ['lists', 'progress', 'fixed', 'stats', 'unlocks', 'articles']) if (!out[k] || typeof out[k] !== 'object') out[k] = {};
   out.unlocks = { endless: out.unlocks.endless === true };
   out.days = Array.isArray(out.days) ? [...new Set(out.days.filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)))].sort() : [];
   out.streak = { ...d.streak, ...(out.streak && typeof out.streak === 'object' ? out.streak : {}) };
@@ -55,6 +57,7 @@ function mergeBuiltins() {
       delete state.progress[id];
       delete state.fixed[id];
       delete state.stats[id];
+      delete state.articles[id];
       state.order = state.order.filter((x) => x !== id);
     }
   }
@@ -142,7 +145,34 @@ export function updateList(id, { name, words }) {
   const keep = new Set(words.map((w) => w.id));
   const st = state.stats[id];
   if (st) for (const k of Object.keys(st)) if (!keep.has(k)) delete st[k];
+  const art = state.articles[id];
+  if (art && art.miss) for (const k of Object.keys(art.miss)) if (!keep.has(k.split(':')[0])) delete art.miss[k];
   save();
+}
+
+// ---------- Artikel ----------
+
+export function articleData(listId) {
+  const a = state.articles[listId] || {};
+  return { last: a.last || null, best: a.best || 0, miss: a.miss || {} };
+}
+
+/** A noun was answered: a mistake counts up, a right answer counts one mistake down. */
+export function articleAnswer(listId, key, right) {
+  const a = (state.articles[listId] = state.articles[listId] || {});
+  const miss = (a.miss = a.miss || {});
+  if (right) { if (miss[key]) { miss[key]--; if (!miss[key]) delete miss[key]; } } else miss[key] = (miss[key] || 0) + 1;
+  save();
+}
+
+/** A finished round. Returns { newBest } (best streak of right answers in a row). */
+export function articleResult(listId, { right, total, streak }) {
+  const a = (state.articles[listId] = state.articles[listId] || {});
+  a.last = { right, total };
+  const newBest = streak > (a.best || 0) && (a.best || 0) > 0;
+  a.best = Math.max(a.best || 0, streak);
+  save();
+  return { newBest };
 }
 
 export function deleteList(id) {
@@ -152,6 +182,7 @@ export function deleteList(id) {
   delete state.progress[id];
   delete state.fixed[id];
   delete state.stats[id];
+  delete state.articles[id];
   state.order = state.order.filter((x) => x !== id);
   if (state.currentListId === id) state.currentListId = state.order[0] || null;
   save();
@@ -203,6 +234,7 @@ export function resetProgress() {
   state.progress = {};
   state.fixed = {};
   state.stats = {};
+  state.articles = {};
   state.days = [];
   state.streak = { best: 0, shown: 0, brokeOn: null };
   pendingStreakAnim = null;

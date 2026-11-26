@@ -1,5 +1,5 @@
 // Offline support. Bump VERSION on every deploy so phones fetch the new files.
-const VERSION = '1.9.0';
+const VERSION = '1.10.0';
 const CACHE = 'vokabeltrainer-' + VERSION;
 const FILES = [
   './',
@@ -16,6 +16,7 @@ const FILES = [
   './js/streak.js',
   './js/bomb.js',
   './js/intro.js',
+  './js/artikel.js',
   './manifest.webmanifest',
   './icons/favicon.svg',
   './icons/icon-192.png',

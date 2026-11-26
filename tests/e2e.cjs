@@ -53,7 +53,13 @@ async function main() {
   await page.waitForFunction(() => document.querySelector('.ob-slide.on .ob-title').textContent.startsWith('Vier Spiele'));
   await page.locator('.ob-back').click();
   await page.waitForFunction(() => document.querySelector('.ob-slide.on .ob-title').textContent === 'Ein Timer pro Level');
-  for (let i = 0; i < 5; i++) await page.locator('.ob-next').click();
+  for (let i = 0; i < 3; i++) await page.locator('.ob-next').click();
+  // step 5: the modes – every chip on one line, Artikel among them
+  await page.waitForFunction(() => document.querySelector('.ob-slide.on .ob-title').textContent === 'Level und Modi');
+  const modeChips = await page.locator('.ob-slide.on .ob-mode').evaluateAll((els) => els.map((e) => ({ t: e.textContent.trim(), h: e.getBoundingClientRect().height })));
+  assert.deepEqual(modeChips.map((m) => m.t), ['Endlos', 'Fehlertraining', 'Artikel']);
+  assert.ok(modeChips.every((m) => m.h < 42), 'no mode name breaks inside its chip');
+  for (let i = 0; i < 2; i++) await page.locator('.ob-next').click();
   assert.equal((await page.locator('.ob-next').textContent()).trim(), 'Los geht’s', 'last step');
   assert.ok((await page.locator('.ob-slide.on').textContent()).includes('Listen & Wörter'));
   await page.locator('.ob-next').click();
@@ -802,6 +808,37 @@ async function main() {
   assert.ok(await page.locator('.week .day.missed').count() <= 1, 'the missed day is crossed out (if it is in this week)');
   assert.ok((await page.locator('.streak-hint').textContent()).includes('Rekord bleibt 3'));
   await shot(page, '32-streak-lost');
+
+  // ---------- 8h2. Artikel: der/die/das, a mistake does not end the round, retry the mistakes ----------
+  assert.ok((await page.locator('.mode-card.mode-artikel').textContent()).includes('Nomen'), 'Artikel card shows the nouns');
+  await page.locator('.mode-card.mode-artikel').click();
+  await page.waitForSelector('.art-btn');
+  assert.equal(await page.locator('.art-btn').count(), 3);
+  assert.ok((await page.locator('.game-round').textContent()).includes('von 12'));
+  let artWrong = null;
+  for (let q = 0; q < 12; q++) {
+    const it = await page.evaluate(() => { const g = window.__vtGame; const x = g.items[g.i]; return { a: x.article, n: x.noun }; });
+    const choose = q === 0 ? ['der', 'die', 'das'].find((x) => x !== it.a) : it.a;
+    await page.locator('.art-btn.art-' + choose).click();
+    if (q === 0) {
+      artWrong = it;
+      assert.ok(await page.locator('.art-btn.wrong').count() && await page.locator('.art-btn.right.reveal').count(), 'wrong + right answer shown');
+      assert.equal((await page.locator('.art-word').textContent()).replace(/\s+/g, ' ').trim(), it.a + ' ' + it.n, 'the full noun with its article');
+      assert.equal(await page.locator('.modal').count(), 0, 'a mistake does not end the round');
+    }
+    await page.waitForFunction((qq) => window.__vtGame.i > qq || window.__vtGame.ended, q, { timeout: 4000 });
+  }
+  await page.waitForSelector('.modal .big-number');
+  assert.ok((await page.locator('.modal').textContent()).includes('11 von 12'));
+  assert.ok((await page.locator('.art-wrong-row').textContent()).includes(artWrong.a + ' ' + artWrong.n), 'the mistake is listed with its article');
+  await shot(page, '33-artikel-end');
+  await page.locator('.modal .btn', { hasText: 'Fehler wiederholen (1)' }).click();
+  await page.waitForFunction(() => window.__vtGame && !window.__vtGame.ended && window.__vtGame.items.length === 1);
+  await page.locator('.art-btn').first().click();
+  await page.waitForSelector('.modal .big-number');
+  await page.locator('.modal .btn', { hasText: 'Menü' }).click();
+  await page.waitForSelector('.home');
+  assert.ok((await page.locator('.mode-card.mode-artikel').textContent()).includes('Zuletzt'), 'last result on the card');
 
   // ---------- 8i. "Fortschritt zurücksetzen": Endlos stays open (for every list) ----------
   await page.locator('.home-top .icon-btn').click();

@@ -167,6 +167,55 @@ export function placeNewPairs(freed, words, mixed, rnd = Math.random) {
   return out;
 }
 
+// ---------- Artikel (der, die, das) ----------
+
+export const ARTICLES = ['der', 'die', 'das'];
+export const ARTICLE_SESSION = 12;
+export const ARTICLE_MIN = 4;
+
+/**
+ * Nouns of a list for the Artikel mode: every German translation that starts with der/die/das.
+ * Left out: plural marks ("die Daten (Pl.)"), brackets ("die (finanziellen) Mittel") and both forms
+ * at once ("der/die Verbraucher/-in") – there the article says nothing about the noun.
+ * Returns [{ key, w, article, noun }]; key = word id + noun (stays the same when the list is edited).
+ */
+export function articleItems(words) {
+  const out = [];
+  const seen = new Set();
+  for (const w of words) {
+    for (const v of variants(w.de, 'de')) {
+      const m = /^(der|die|das)\s+(.+)$/i.exec(v.trim());
+      if (!m) continue;
+      const noun = m[2].trim();
+      if (/[()/]|\bpl\b|\bplural\b/i.test(noun) || /^(der|die|das)\b/i.test(noun)) continue;
+      const key = w.id + ':' + noun;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ key, w, article: m[1].toLowerCase(), noun });
+    }
+  }
+  return out;
+}
+
+/**
+ * One Artikel round: up to n nouns. Nouns with mistakes first (most mistakes first, at most half of
+ * the round), the rest at random; one noun per word as long as there are enough words. Shuffled.
+ */
+export function articleSession(items, miss = {}, n = ARTICLE_SESSION, rnd = Math.random) {
+  const pick = [];
+  const words = new Set();
+  const take = (it) => { pick.push(it); words.add(it.w.id); };
+  const hard = items.filter((it) => (miss[it.key] || 0) > 0).sort((a, b) => miss[b.key] - miss[a.key]);
+  for (const it of hard) {
+    if (pick.length >= Math.ceil(n / 2)) break;
+    if (!words.has(it.w.id)) take(it);
+  }
+  const rest = shuffle(items.filter((it) => !pick.includes(it)), rnd);
+  for (const it of rest) if (pick.length < n && !words.has(it.w.id)) take(it);
+  for (const it of rest) if (pick.length < n && !pick.includes(it)) take(it);
+  return shuffle(pick, rnd);
+}
+
 // ---------- Fehlertraining ----------
 
 export const TRAINING_STEPS = ['choice', 'gaps', 'spell'];

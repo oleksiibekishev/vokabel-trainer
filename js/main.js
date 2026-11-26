@@ -3,12 +3,14 @@ import { t, tSplit, setLang, detectLang, LANGS, getLang } from './i18n.js';
 import { h, icon, logo, levelBars, toast, modal, confirmDialog, sfx, closeAllModals } from './ui.js';
 import {
   LEVELS, LEVEL_IDS, MIN_WORDS, parseWordList, encodeData, decodeData, listToShare, listFromShare, listIdFor, listToText,
+  articleItems, ARTICLE_MIN,
 } from './core.js';
 import { Game } from './game.js';
+import { ArticleGame } from './artikel.js';
 import * as streakUI from './streak.js';
 import { openIntro, closeIntro, introIsOpen } from './intro.js';
 
-export const APP_VERSION = '1.9.0';
+export const APP_VERSION = '1.10.0';
 
 const app = document.getElementById('app');
 let game = null;
@@ -207,10 +209,10 @@ function levelStates(list) {
 /** Start a game: the start screen fades out, the game fades in, its parts one after another. */
 async function startGame({ level, focus = [], fromGame = false } = {}) {
   const list = store.currentList();
-  const allowed = list && list.words.length >= MIN_WORDS && (
+  const allowed = list && (level === 'artikel' ? articleItems(list.words).length >= ARTICLE_MIN : list.words.length >= MIN_WORDS && (
     level === 'endless' ? store.endlessUnlocked()
       : level === 'training' ? store.mistakeWords(list.id, list.words).length > 0
-        : LEVEL_IDS.includes(level) && store.isUnlocked(list.id, level));
+        : LEVEL_IDS.includes(level) && store.isUnlocked(list.id, level)));
   if (!allowed) { await doShow('home'); return; }
   busy(true);
   if (sheets.length) {
@@ -229,12 +231,14 @@ async function startGame({ level, focus = [], fromGame = false } = {}) {
   const root = h('div', { class: 'screen game' });
   app.replaceChildren(root);
   window.scrollTo(0, 0);
-  game = new Game({
-    root, list, level, focus,
-    onMenu: () => { game = null; goBack(); },
-    onNextLevel: (lvl) => show('game', { level: lvl, fromGame: true }),
-    onTrain: (ids) => show('game', { level: 'training', focus: ids, fromGame: true }),
-  });
+  game = level === 'artikel'
+    ? new ArticleGame({ root, list, onMenu: () => { game = null; goBack(); } })
+    : new Game({
+      root, list, level, focus,
+      onMenu: () => { game = null; goBack(); },
+      onNextLevel: (lvl) => show('game', { level: lvl, fromGame: true }),
+      onTrain: (ids) => show('game', { level: 'training', focus: ids, fromGame: true }),
+    });
   game.start();
   if (!reduced()) {
     if (fromGame) {
@@ -417,7 +421,19 @@ function modesSection(list, enough) {
       statusCls: mistakes ? 'best' : 'fresh',
       play: t('practice'),
       badge: mistakes > 0 ? String(mistakes) : null,
-    }));
+    }),
+    artikelCard(card, list));
+}
+
+/** Artikel: der, die, das for the nouns of the list (open from the start, needs 4 nouns with an article). */
+function artikelCard(card, list) {
+  const n = articleItems(list.words).length;
+  const ad = store.articleData(list.id);
+  let status;
+  if (n < ARTICLE_MIN) status = { status: t('artikelEmpty'), statusCls: 'fresh' };
+  else if (ad.last) status = { status: [icon('check'), t('artikelLast', { r: ad.last.right, n: ad.last.total })], statusCls: 'best' };
+  else status = { status: t('artikelNouns', { n }), statusCls: 'fresh' };
+  return card({ id: 'artikel', playable: n >= ARTICLE_MIN, desc: t('artikelMeta'), play: t('practice'), ...status });
 }
 
 function levelCard(list, level, enough) {

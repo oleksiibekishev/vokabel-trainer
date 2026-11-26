@@ -7,7 +7,7 @@ import {
   encodeData, decodeData, listToShare, listFromShare, primaryForm, answerDiff, variants, allVariants, gapTargets,
   ENDLESS, MOD_TYPES, stepValue, applyBonus, komboNext, rollModifier, fitTypeToMod, placeNewPairs, wirbelOrder, trainingTypes, trainingPick,
   trainingSession, TRAINING_MAX, streakInfo, bestStreak, missedDay, weekView, monthGrid, addDays, weekday, shiftMonth,
-  BOMB, bombClock, bombLayout, listToText,
+  BOMB, bombClock, bombLayout, listToText, articleItems, articleSession, ARTICLE_SESSION, ARTICLE_MIN,
 } from '../js/core.js';
 import { BUILTIN_LISTS } from '../js/builtin-lists.js';
 
@@ -377,4 +377,26 @@ test('list editor: words as text and back without changes', () => {
   const odd = [{ id: 'a', en: 'one – two', de: 'eins' }, { id: 'b', en: 'dog', de: 'Hund' }];
   const r = parseWordList(listToText(odd)).words;
   assert.deepEqual(r.map((w) => [w.en, w.de]), [['one – two', 'eins'], ['dog', 'Hund']]);
+});
+
+test('Artikel: nouns with der/die/das, rounds with the hard ones first', () => {
+  const words = parseWordList(BUILTIN_LISTS[0].text).words;
+  const items = articleItems(words);
+  assert.ok(items.length >= ARTICLE_MIN);
+  assert.ok(items.every((it) => ['der', 'die', 'das'].includes(it.article) && !/^(der|die|das)\b/i.test(it.noun)));
+  const nouns = items.map((it) => it.noun);
+  assert.ok(nouns.includes('Autowerkstatt') && nouns.includes('Lager') && nouns.includes('Bestand'));
+  assert.ok(!nouns.some((n) => /\(|\//.test(n)), 'no plural marks or double forms: ' + nouns.join(','));
+  assert.equal(items.find((it) => it.noun === 'Lager').article, 'das');
+  const odd = articleItems([{ id: 'x', en: 'consumer', de: 'der/die Verbraucher/-in' }, { id: 'y', en: 'data', de: 'die Daten (Pl.)' }]);
+  assert.equal(odd.length, 0);
+  // a round: 12 nouns, every word at most once, nouns with mistakes first
+  const hardKey = items[items.length - 1].key;
+  for (let i = 0; i < 50; i++) {
+    const s = articleSession(items, { [hardKey]: 2 });
+    assert.equal(s.length, ARTICLE_SESSION);
+    assert.equal(new Set(s.map((it) => it.w.id)).size, s.length, 'one noun per word');
+    assert.ok(s.some((it) => it.key === hardKey), 'the noun with mistakes is in the round');
+  }
+  assert.equal(articleSession(items.slice(0, 3), {}).length, 3, 'small lists: all nouns');
 });

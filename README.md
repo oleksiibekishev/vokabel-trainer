@@ -43,6 +43,7 @@ Die Zeitbombe lässt sich in den Einstellungen abschalten (Schalter „Zeitbombe
 
 - **Endlos** (nach „Mittel“, siehe oben): Runden ohne Ende mit allen Spielen, Start 30 s, **kein Limit**. Bonus: +10 s bis Runde 10, +8 s bis 20, +6 s bis 30, danach +5 s. Spezialrunden werden häufiger (25 % → 50 %), Zeitraffer ab Runde 21 2×. Ein Fehler beendet das Spiel, Rekord = geschaffte Runden.
 - **Fehlertraining**: nur Wörter mit Fehlern, ohne Zeit, höchstens 10 Wörter pro Durchgang (die schwierigsten zuerst). Jedes Wort muss 3× richtig sein (Auswahl → Lücken → Schreiben), dann steht sein Fehlerzähler wieder auf 0. Ein Fehler schickt das Wort zurück an den Anfang. Im Fehler-Fenster eines Levels startet „Dieses Wort üben“ das Fehlertraining mit genau diesem Wort.
+- **Artikel** (von Anfang an offen): der, die oder das? 12 Nomen der aktuellen Liste pro Runde, ohne Zeit; das englische Wort steht als Hilfe darunter (z. B. „Lager – stock“). Ein Fehler beendet die Runde nicht: die richtige Antwort wird gezeigt, am Ende stehen die falschen Nomen mit Artikel, „Fehler wiederholen“ übt genau diese. Nomen mit Fehlern kommen in der nächsten Runde zuerst (höchstens die Hälfte). Genommen werden alle deutschen Übersetzungen, die mit der/die/das beginnen – ohne Plural-Markierung („die Daten (Pl.)“), Klammern oder Doppelformen („der/die Verbraucher/-in“). Braucht mindestens 4 solche Nomen in der Liste. Zählt für die Tagesserie.
 
 ### Tagesserie
 
@@ -91,6 +92,7 @@ Reines HTML/CSS/JavaScript ohne Build-Schritt.
 - `js/streak.js` – Tagesserie: Zähler, Kachel, Kalender
 - `js/bomb.js` + `css/zeitbombe.css` – Spezialrunde Zeitbombe
 - `js/intro.js` – Einführung (erster Start, Einstellungen)
+- `js/artikel.js` – Modus Artikel (der, die, das)
 - `js/main.js` – Bildschirme (Start, Listen, Wörter, Einstellungen)
 - `js/builtin-lists.js` – Listen, die alle automatisch bekommen
 - `sw.js` – Offline-Cache

@@ -61,8 +61,7 @@ function artLevels() {
   return h('div', { class: 'ob-art ob-levels' },
     row('easy', 'done'), row('medium', 'open'), row('hard', 'locked'),
     h('div', { class: 'ob-modes' },
-      h('span', { class: 'ob-mode' }, icon('endless'), t('level_endless')),
-      h('span', { class: 'ob-mode' }, icon('training'), t('level_training'))));
+      ['endless', 'training', 'artikel'].map((m) => h('span', { class: 'ob-mode' }, icon(m), t('level_' + m)))));
 }
 
 function artStreak() {
