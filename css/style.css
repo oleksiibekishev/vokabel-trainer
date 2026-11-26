@@ -315,6 +315,13 @@ h1, h2, p { margin: 0; }
 }
 .field:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .field.area { height: auto; padding: 12px 14px; line-height: 1.4; resize: vertical; min-height: 100px; }
+/* languages of the two columns (list form) */
+.lang-row { display: flex; align-items: flex-end; gap: 8px; }
+.lang-pick { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.lang-pick small { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.lang-select { padding: 0 10px; }
+.lang-arrow { padding-bottom: 13px; color: var(--muted); }
+.lang-note:empty { display: none; }
 .field.mono { font-family: var(--mono); font-size: 13px; }
 .field.invalid { border-color: var(--err); }
 .field-error { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; color: var(--err); }

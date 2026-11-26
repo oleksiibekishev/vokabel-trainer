@@ -102,7 +102,7 @@ export class Bomb {
     this.sel = null;
     this.tiles = bombLayout(words).map(({ w, side }, i) => {
       const text = pickVariant(side === 'en' ? w.en : w.de, side);
-      const el = h('button', { class: 'tile zb-tile', type: 'button', lang: side, 'data-side': side, 'data-wid': w.id },
+      const el = h('button', { class: 'tile zb-tile', type: 'button', lang: this.g.lang[side], 'data-side': side, 'data-wid': w.id },
         h('span', { class: 'zb-word' }, text));
       if (covered) el.appendChild(h('span', { class: 'zb-cover', 'aria-hidden': 'true' }, h('i'), h('i')));
       if (fresh) { el.classList.add('new'); el.style.setProperty('--d', (i * 30) + 'ms'); }

@@ -2,7 +2,7 @@
 // a mistake does not end the round. Nouns with mistakes come first next time.
 // Same outside shape as Game (start, destroy, holdFor, askQuit, ended/destroyed) for main.js.
 
-import { ARTICLES, ARTICLE_SESSION, articleItems, articleSession, displayForms } from './core.js';
+import { ARTICLES, ARTICLE_SESSION, articleItems, articleSession, listLangs } from './core.js';
 import * as store from './store.js';
 import { t, tDays } from './i18n.js';
 import { h, icon, modal, sfx } from './ui.js';
@@ -48,7 +48,7 @@ export class ArticleGame {
   /** keys: only these nouns ("Fehler wiederholen"); otherwise a new round. */
   start(keys = null) {
     clearTimeout(this.timer);
-    const items = articleItems(this.list.words);
+    const items = articleItems(this.list.words, listLangs(this.list));
     const miss = store.articleData(this.list.id).miss;
     this.items = keys ? articleSession(items.filter((it) => keys.includes(it.key)), {}, keys.length) : articleSession(items, miss, ARTICLE_SESSION);
     this.i = 0;
@@ -86,12 +86,11 @@ export class ArticleGame {
   show() {
     const it = this.items[this.i];
     this.renderProgress();
-    const en = displayForms(it.w.en)[0] || it.w.en;
     this.elWord = h('span', { class: 'word art-word', lang: 'de' }, h('span', { class: 'art-the' }), ' ', h('span', null, it.noun));
     const card = h('div', { class: 'prompt-card pop art-card' },
       h('span', { class: 'label' }, t('label_de')),
       this.elWord,
-      h('span', { class: 'art-hint', lang: 'en', 'aria-label': t('artikelHintAria', { w: en }) }, en));
+      h('span', { class: 'art-hint', lang: it.hintLang }, it.hint));
     this.buttons = ARTICLES.map((a) => h('button', {
       class: 'art-btn art-' + a, type: 'button', lang: 'de', onclick: () => this.answer(a),
     }, a));
@@ -153,7 +152,7 @@ export class ArticleGame {
         h('p', { class: 'art-wrong-head' }, t('artikelWrongHead')),
         this.wrong.map((it) => h('div', { class: 'art-wrong-row' },
           h('span', { lang: 'de' }, h('b', { class: 'art-' + it.article }, it.article), ' ' + it.noun),
-          h('span', { class: 'art-wrong-en', lang: 'en' }, displayForms(it.w.en)[0] || it.w.en)))) : null,
+          h('span', { class: 'art-wrong-en', lang: it.hintLang }, it.hint)))) : null,
       st.plus ? h('div', { class: 'st-chip-row' }, h('span', { class: 'st-chip' }, icon('streak'),
         t('streakChip') + ' ', h('b', null, st.n + ' ' + tDays(st.n)), h('span', { class: 'st-plus' }, '+1'))) : null);
     const buttons = [[{ label: t('menu'), value: 'menu', kind: 'outline' }, { label: t('again'), value: 'again', kind: 'primary', grow: true }]];

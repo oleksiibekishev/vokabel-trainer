@@ -167,6 +167,54 @@ export function placeNewPairs(freed, words, mixed, rnd = Math.random) {
   return out;
 }
 
+// ---------- languages of a list ----------
+// Internally the left column is the "en" side and the right one the "de" side (the app started as
+// English–German). A list can also be German–Ukrainian, English–Ukrainian, German–English …
+
+export const LIST_LANGS = ['en', 'de', 'uk'];
+
+const CYR = /[\u0400-\u04FF]/;
+const DE_STRONG = /^(der|die|das|ein|eine)\s|[äöüßÄÖÜ]/;
+const DE_WEAK = /sch|ung\b|keit\b|heit\b|lich\b|chen\b|tz|pf|ei|ie|\bzu\b|\bund\b/;
+const CAP = /^[A-ZÄÖÜ]/;
+const EN_STRONG = /^to\s|\bthe\b|\ban?\s/i;
+const EN_WEAK = /th|ou|ing\b|ght|ph|qu|\bof\b|y\b|w/i;
+
+/** How German a column looks (positive) or how English (negative), per word on average. */
+function germanScore(texts) {
+  // capitals help only when they are mixed (German nouns vs. verbs) – not when every line starts with one
+  const caps = texts.filter((t) => CAP.test(String(t))).length / Math.max(1, texts.length);
+  const useCaps = caps > 0.15 && caps < 0.9;
+  let sum = 0;
+  for (const t of texts) {
+    const s = String(t);
+    sum += (DE_STRONG.test(s) ? 3 : 0) + (DE_WEAK.test(s) ? 1 : 0) + (useCaps && CAP.test(s) ? 1 : 0)
+      - (EN_STRONG.test(s) ? 3 : 0) - (EN_WEAK.test(s) ? 1 : 0);
+  }
+  return sum / Math.max(1, texts.length);
+}
+
+/** Guesses the languages of both columns: { left, right } (codes from LIST_LANGS). */
+export function detectLangs(words) {
+  const L = words.map((w) => w.en);
+  const R = words.map((w) => w.de);
+  const share = (arr, re) => arr.filter((x) => re.test(x)).length / Math.max(1, arr.length);
+  const cyrL = share(L, CYR) > 0.5;
+  const cyrR = share(R, CYR) > 0.5;
+  if (cyrL && cyrR) return { left: 'uk', right: 'uk' };
+  if (cyrR) return { left: germanScore(L) > 0.6 ? 'de' : 'en', right: 'uk' };
+  if (cyrL) return { left: 'uk', right: germanScore(R) > 0.6 ? 'de' : 'en' };
+  // both Latin: the more German column is German (English–German unless the left one is clearly more German)
+  return germanScore(L) > germanScore(R) + 0.5 ? { left: 'de', right: 'en' } : { left: 'en', right: 'de' };
+}
+
+/** The languages of a list: chosen by the user (list.langs) or guessed. */
+export function listLangs(list) {
+  const l = list && list.langs;
+  if (l && LIST_LANGS.includes(l.left) && LIST_LANGS.includes(l.right)) return { left: l.left, right: l.right };
+  return detectLangs((list && list.words) || []);
+}
+
 // ---------- Artikel (der, die, das) ----------
 
 export const ARTICLES = ['der', 'die', 'das'];
@@ -177,13 +225,19 @@ export const ARTICLE_MIN = 4;
  * Nouns of a list for the Artikel mode: every German translation that starts with der/die/das.
  * Left out: plural marks ("die Daten (Pl.)"), brackets ("die (finanziellen) Mittel") and both forms
  * at once ("der/die Verbraucher/-in") – there the article says nothing about the noun.
- * Returns [{ key, w, article, noun }]; key = word id + noun (stays the same when the list is edited).
+ * langs: the list's languages (listLangs) – the German column can be left or right.
+ * Returns [{ key, w, article, noun, hint, hintLang }]; key = word id + noun (stays the same when the list is edited).
  */
-export function articleItems(words) {
+export function articleItems(words, langs = null) {
+  const L = langs || { left: 'en', right: 'de' };
+  // the German column: right (English–German) or left (German–Ukrainian, German–English)
+  const side = L.right === 'de' ? 'de' : L.left === 'de' ? 'en' : null;
+  if (!side) return [];
+  const other = side === 'de' ? 'en' : 'de';
   const out = [];
   const seen = new Set();
   for (const w of words) {
-    for (const v of variants(w.de, 'de')) {
+    for (const v of variants(w[side], 'de')) {
       const m = /^(der|die|das)\s+(.+)$/i.exec(v.trim());
       if (!m) continue;
       const noun = m[2].trim();
@@ -191,7 +245,7 @@ export function articleItems(words) {
       const key = w.id + ':' + noun;
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push({ key, w, article: m[1].toLowerCase(), noun });
+      out.push({ key, w, article: m[1].toLowerCase(), noun, hint: displayForms(w[other])[0] || w[other], hintLang: other === 'en' ? L.left : L.right });
     }
   }
   return out;
@@ -784,7 +838,9 @@ export function listToText(words) {
 }
 
 export function listToShare(list) {
-  return { v: 1, n: list.name, w: list.words.map((w) => [w.en, w.de]) };
+  const out = { v: 1, n: list.name, w: list.words.map((w) => [w.en, w.de]) };
+  if (list.langs) out.l = [list.langs.left, list.langs.right];
+  return out;
 }
 
 /** Validates untrusted share data and turns it into a list. */
@@ -804,7 +860,8 @@ export function listFromShare(data) {
     words.push({ id, en, de });
   }
   if (!words.length) throw new Error('empty list');
-  return { name, words };
+  const l = Array.isArray(data.l) && LIST_LANGS.includes(data.l[0]) && LIST_LANGS.includes(data.l[1]) ? { left: data.l[0], right: data.l[1] } : null;
+  return l ? { name, words, langs: l } : { name, words };
 }
 
 export function listIdFor(words) {

@@ -136,11 +136,12 @@ export function addList(list) {
  * stay are kept; mistakes of removed words go. A built-in list becomes the user's own (no update
  * from the app overwrites it any more).
  */
-export function updateList(id, { name, words }) {
+export function updateList(id, { name, words, langs = null }) {
   const l = state.lists[id];
   if (!l) return;
   l.name = name;
   l.words = words;
+  if (langs) l.langs = { left: langs.left, right: langs.right };
   if (l.builtin) { l.builtin = false; l.fromBuiltin = true; }
   const keep = new Set(words.map((w) => w.id));
   const st = state.stats[id];

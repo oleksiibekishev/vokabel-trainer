@@ -58,6 +58,8 @@ In der App: **Listen & Wörter → Liste hinzufügen** → Namen eingeben (Pflic
 Mit dem **Stift** lässt sich eine Liste später ändern (Name, Wörter hinzufügen/ändern/löschen – eine Zeile pro Paar). Der Fortschritt bleibt, die Fehler gelöschter Wörter verschwinden. Eine geänderte mitgelieferte Liste wird nicht mehr durch App-Updates überschrieben.
 Mit **Teilen** entsteht ein Link, den man z. B. per WhatsApp an die Klasse schickt. Der Link enthält die ganze Liste (~1000 Zeichen für 36 Wörter); die App macht daraus über [is.gd](https://is.gd) einen Kurzlink (die Liste geht dabei an is.gd). Ohne Internet wird der lange Link geteilt – er funktioniert genauso.
 
+**Sprachen:** Die App erkennt die Sprachen der beiden Spalten selbst – Englisch–Deutsch (Standard), aber z. B. auch Deutsch–Ukrainisch („der Tisch - стіл“), Englisch–Ukrainisch oder Deutsch–Englisch. Kyrillisch = Ukrainisch; von zwei lateinischen Spalten ist die mit Artikeln, Umlauten und typisch deutschen Endungen die deutsche. Im Formular (neue Liste / bearbeiten) stehen die erkannten Sprachen unter „Sprachen der Spalten“ und lassen sich ändern; sie werden mit der Liste gespeichert und beim Teilen mitgeschickt. Danach richten sich alle Beschriftungen (z. B. „DEUTSCH → UKRAINISCH“), und der Modus „Artikel“ nimmt die deutsche Spalte – egal ob links oder rechts.
+
 Format – eine Zeile pro Wort:
 
 ```

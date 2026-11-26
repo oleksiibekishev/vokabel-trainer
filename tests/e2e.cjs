@@ -840,6 +840,39 @@ async function main() {
   await page.waitForSelector('.home');
   assert.ok((await page.locator('.mode-card.mode-artikel').textContent()).includes('Zuletzt'), 'last result on the card');
 
+  // ---------- 8h3. a German–Ukrainian list: languages are recognized, Artikel uses the left column ----------
+  await page.locator('.list-card .btn', { hasText: 'Listen & Wörter' }).click();
+  await page.waitForSelector('.sheet .list-rows');
+  await page.waitForFunction(() => !document.documentElement.classList.contains('busy'));
+  await page.locator('.add-list-btn').click();
+  await page.waitForSelector('#list-text');
+  await page.waitForFunction(() => !document.documentElement.classList.contains('busy'));
+  await page.locator('#list-name').fill('Nomen DE-UK');
+  await page.locator('#list-text').fill('der Tisch - стіл\ndie Lampe - лампа\ndas Fenster - вікно\nder Stuhl - стілець\ndie Tür - двері\ndas Haus - будинок');
+  assert.equal(await page.locator('#lang-left').inputValue(), 'de', 'left column: German');
+  assert.equal(await page.locator('#lang-right').inputValue(), 'uk', 'right column: Ukrainian');
+  assert.ok((await page.locator('.lang-note').textContent()).includes('Deutsch – Ukrainisch'));
+  await page.locator('.btn', { hasText: 'Liste speichern' }).click();
+  await page.waitForFunction(() => !document.querySelector('#list-text') && document.querySelector('.list-row.active')?.textContent.includes('Nomen DE-UK'));
+  assert.equal((await page.locator('.word-table-head span').first().textContent()), 'DEUTSCH · UKRAINISCH');
+  await page.goBack();
+  await page.waitForFunction(() => document.querySelector('.home') && !document.querySelector('.sheet') && !document.documentElement.classList.contains('busy'));
+  assert.ok(!(await page.locator('.mode-card.mode-artikel').isDisabled()), 'Artikel finds the German nouns on the left');
+  await page.locator('.mode-card.mode-artikel').click();
+  await page.waitForSelector('.art-btn');
+  assert.equal(await page.locator('.art-hint').getAttribute('lang'), 'uk', 'the hint is the Ukrainian word');
+  assert.ok(/[\u0400-\u04FF]/.test(await page.locator('.art-hint').textContent()));
+  await page.locator('.game-top .icon-btn').click();
+  await page.locator('.modal .btn', { hasText: 'Beenden' }).click();
+  await page.waitForSelector('.home');
+  // back to the list the rest of the test uses
+  await page.locator('.list-card .btn', { hasText: 'Listen & Wörter' }).click();
+  await page.waitForSelector('.sheet .list-rows');
+  await page.locator('.list-main', { hasText: 'KA1 E Vorbereitung' }).click();
+  await page.waitForFunction(() => document.querySelector('.list-row.active')?.textContent.includes('KA1 E Vorbereitung'));
+  await page.goBack();
+  await page.waitForFunction(() => document.querySelector('.home') && !document.querySelector('.sheet') && !document.documentElement.classList.contains('busy'));
+
   // ---------- 8i. "Fortschritt zurücksetzen": Endlos stays open (for every list) ----------
   await page.locator('.home-top .icon-btn').click();
   await page.waitForSelector('.sheet .switch');

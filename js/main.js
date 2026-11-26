@@ -3,14 +3,14 @@ import { t, tSplit, setLang, detectLang, LANGS, getLang } from './i18n.js';
 import { h, icon, logo, levelBars, toast, modal, confirmDialog, sfx, closeAllModals } from './ui.js';
 import {
   LEVELS, LEVEL_IDS, MIN_WORDS, parseWordList, encodeData, decodeData, listToShare, listFromShare, listIdFor, listToText,
-  articleItems, ARTICLE_MIN,
+  articleItems, ARTICLE_MIN, detectLangs, listLangs, LIST_LANGS,
 } from './core.js';
 import { Game } from './game.js';
 import { ArticleGame } from './artikel.js';
 import * as streakUI from './streak.js';
 import { openIntro, closeIntro, introIsOpen } from './intro.js';
 
-export const APP_VERSION = '1.10.0';
+export const APP_VERSION = '1.10.1';
 
 const app = document.getElementById('app');
 let game = null;
@@ -209,7 +209,7 @@ function levelStates(list) {
 /** Start a game: the start screen fades out, the game fades in, its parts one after another. */
 async function startGame({ level, focus = [], fromGame = false } = {}) {
   const list = store.currentList();
-  const allowed = list && (level === 'artikel' ? articleItems(list.words).length >= ARTICLE_MIN : list.words.length >= MIN_WORDS && (
+  const allowed = list && (level === 'artikel' ? articleItems(list.words, listLangs(list)).length >= ARTICLE_MIN : list.words.length >= MIN_WORDS && (
     level === 'endless' ? store.endlessUnlocked()
       : level === 'training' ? store.mistakeWords(list.id, list.words).length > 0
         : LEVEL_IDS.includes(level) && store.isUnlocked(list.id, level)));
@@ -427,7 +427,7 @@ function modesSection(list, enough) {
 
 /** Artikel: der, die, das for the nouns of the list (open from the start, needs 4 nouns with an article). */
 function artikelCard(card, list) {
-  const n = articleItems(list.words).length;
+  const n = articleItems(list.words, listLangs(list)).length;
   const ad = store.articleData(list.id);
   let status;
   if (n < ARTICLE_MIN) status = { status: t('artikelEmpty'), statusCls: 'fresh' };
@@ -552,6 +552,7 @@ function renderLists() {
 }
 
 function wordsSection(list) {
+  const L = listLangs(list);
   const st = store.stats(list.id);
   const mk = (id) => (st[id] ? st[id].w || 0 : 0);
   // always hardest first (most mistakes); words without mistakes keep the list order
@@ -562,9 +563,9 @@ function wordsSection(list) {
       h('span', { class: 'list-count' }, t('wordsN', { n: list.words.length }) + ' · ' + t('sortHard'))),
     !words.some((w) => mk(w.id) > 0) ? h('div', { class: 'info-dashed' }, icon('info'), t('noMistakes')) : null,
     h('div', { class: 'word-table' },
-      h('div', { class: 'word-table-head' }, h('span', null, t('wordsHead')), h('span', null, t('mistakesHead'))),
+      h('div', { class: 'word-table-head' }, h('span', null, t('label_' + L.left) + ' · ' + t('label_' + L.right)), h('span', null, t('mistakesHead'))),
       words.map((w) => h('div', { class: 'word-row' },
-        h('div', { class: 'words' }, h('span', { class: 'w-en', lang: 'en' }, w.en), h('span', { class: 'w-de', lang: 'de' }, w.de)),
+        h('div', { class: 'words' }, h('span', { class: 'w-en', lang: L.left }, w.en), h('span', { class: 'w-de', lang: L.right }, w.de)),
         mk(w.id)
           ? h('span', { class: 'miss' }, icon('close'), String(mk(w.id)))
           : h('span', { class: 'miss none', 'aria-label': t('noMistakesAria') }, '–')))));
@@ -580,6 +581,22 @@ function renderAddList(editing = null) {
     area.value = listToText(editing.words);
   }
   const before = editing ? new Set(editing.words.map((w) => w.id)) : null;
+  // languages of the two columns: guessed from the words until the user picks them
+  const startLangs = editing ? listLangs(editing) : { left: 'en', right: 'de' };
+  let langsPicked = !!(editing && editing.langs);
+  const langSelect = (id, val) => h('select', { class: 'field lang-select', id, onchange: () => { langsPicked = true; refresh(); } },
+    LIST_LANGS.map((c) => h('option', { value: c, selected: c === val }, t('langName_' + c))));
+  const selL = langSelect('lang-left', startLangs.left);
+  const selR = langSelect('lang-right', startLangs.right);
+  const langNote = h('p', { class: 'hint-small lang-note' });
+  const langBox = h('div', { class: 'field-group lang-box', hidden: !editing },
+    h('span', { class: 'field-label' }, t('langsTitle')),
+    h('div', { class: 'lang-row' },
+      h('label', { class: 'lang-pick' }, h('small', null, t('langLeft')), selL),
+      h('span', { class: 'lang-arrow', 'aria-hidden': 'true' }, '–'),
+      h('label', { class: 'lang-pick' }, h('small', null, t('langRight')), selR)),
+    langNote);
+  const langsNow = () => ({ left: selL.value, right: selR.value });
   const preview = h('div', { class: 'preview', hidden: true });
   const fileInput = h('input', { type: 'file', accept: '.txt,.csv,.tsv,text/plain,text/csv', class: 'sr-only', id: 'file-in' });
   const nameHint = h('p', { class: 'field-error', hidden: true }, icon('alert'), t('nameRequired'));
@@ -593,6 +610,13 @@ function renderAddList(editing = null) {
     nameHint.hidden = named || !area.value.trim();
     nameInput.classList.toggle('invalid', !named && !!area.value.trim());
     preview.hidden = !area.value.trim();
+    langBox.hidden = !editing && !r.words.length;
+    if (!langsPicked && r.words.length) {
+      const g = detectLangs(r.words);
+      selL.value = g.left;
+      selR.value = g.right;
+    }
+    if (r.words.length) langNote.textContent = langsPicked ? '' : t('langsGuess', { a: t('langName_' + selL.value), b: t('langName_' + selR.value) });
     if (preview.hidden) { preview.replaceChildren(); return; }
     let diff = null;
     if (editing) {
@@ -600,10 +624,12 @@ function renderAddList(editing = null) {
       const added = r.words.filter((w) => !before.has(w.id)).length;
       const removed = [...before].filter((id) => !now.has(id)).length;
       const renamed = nameInput.value.trim() !== editing.name;
+      const L0 = listLangs(editing);
+      const relang = L0.left !== selL.value || L0.right !== selR.value;
       diff = h('div', { class: 'preview-diff' }, added || removed
         ? [t('editAdded', { n: added }), t('editRemoved', { n: removed })].join(' · ')
-        : renamed ? '' : t('noChanges'));
-      if (!added && !removed && !renamed) saveBtn.disabled = true;
+        : renamed || relang ? '' : t('noChanges'));
+      if (!added && !removed && !renamed && !relang) saveBtn.disabled = true;
     }
     preview.replaceChildren(...[
       wordsOk
@@ -611,7 +637,7 @@ function renderAddList(editing = null) {
         : h('div', { class: 'preview-status err' }, icon('alert'), t('tooFew', { n: MIN_WORDS })),
       diff,
       r.words.length ? h('div', { class: 'pair-mini' }, r.words.slice(0, 4).map((w) => h('div', null,
-        h('span', { lang: 'en' }, w.en), h('span', { lang: 'de' }, w.de)))) : null,
+        h('span', { lang: selL.value }, w.en), h('span', { lang: selR.value }, w.de)))) : null,
       r.skipped.length ? h('details', { class: 'skipped' },
         h('summary', null, r.skipped.length === 1 ? t('skippedOne') : t('skippedLines', { n: r.skipped.length }), icon('chevronDown')),
         r.skipped.slice(0, 20).map((x) => h('div', null, x))) : null,
@@ -630,7 +656,7 @@ function renderAddList(editing = null) {
     const name = nameInput.value.trim();
     if (r.words.length < MIN_WORDS || !name) return;
     if (editing) {
-      store.updateList(editing.id, { name, words: r.words });
+      store.updateList(editing.id, { name, words: r.words, langs: langsNow() });
       toast(t('listUpdated'), { icon: 'check' });
       goBack();
       return;
@@ -640,7 +666,7 @@ function renderAddList(editing = null) {
       store.selectList(id);
       toast(t('listExists'));
     } else {
-      store.addList({ id, name, words: r.words, builtin: false });
+      store.addList({ id, name, words: r.words, builtin: false, langs: langsNow() });
       toast(t('listSaved'), { icon: 'check' });
     }
     goBack();
@@ -659,6 +685,7 @@ function renderAddList(editing = null) {
     h('label', { class: 'btn outline', for: 'file-in' }, icon('upload'), t('orFile')),
     fileInput,
     preview,
+    langBox,
     saveBtn));
   return wrap;
 }
@@ -744,7 +771,7 @@ async function handleImportLink() {
   const ok = await confirmDialog(t('importTitle'), h('p', { class: 'modal-text' }, pre, h('b', null, name), post), t('add'),
     { icon: { name: 'listPlus', kind: 'accent', extra: 'square' } });
   if (!ok) return;
-  store.addList({ id, name: incoming.name, words: incoming.words, builtin: false });
+  store.addList({ id, name: incoming.name, words: incoming.words, builtin: false, ...(incoming.langs ? { langs: incoming.langs } : {}) });
   show('home');
   toast(t('listSaved'), { icon: 'check' });
 }

@@ -2,6 +2,7 @@ import {
   LEVELS, LEVEL_IDS, ENDLESS, ROUND_SIZE, WIRBEL_EXTRA, KOMBO_MAX, MOD_TYPES, buildTypePlan, endlessTypes, pickWords, pickDistractors,
   makeGaps, checkAnswer, closestForm, answerDiff, shuffle, wordFilterFor, variants, pickVariant, allVariants, gapTargets, norm,
   stepValue, applyBonus, komboNext, rollModifier, fitTypeToMod, placeNewPairs, wirbelOrder, trainingTypes, trainingPick, BOMB,
+  listLangs,
 } from './core.js';
 import { Bomb } from './bomb.js';
 import * as store from './store.js';
@@ -56,6 +57,9 @@ export class Game {
     this.focus = focus;
     this.words = list.words;
     this.byId = new Map(this.words.map((w) => [w.id, w]));
+    // languages of the two columns: side 'en' = left column, side 'de' = right column (e.g. Deutsch – Ukrainisch)
+    const L = listLangs(list);
+    this.lang = { en: L.left, de: L.right };
     if (this.mode === 'endless') this.cfg = { ...ENDLESS };
     else if (this.mode === 'training') this.cfg = { timer: false, mixed: true, gapRatio: 0.35, keepFirst: true };
     else this.cfg = { ...LEVELS[level], ...store.timing(level) };
@@ -700,20 +704,26 @@ export class Game {
       left = h('div', { class: 'qbars', 'aria-hidden': 'true' },
         Array.from({ length: n }, (_, i) => h('span', { class: i < cur ? 'done' : i === cur ? 'cur' : '' })));
     }
-    return h('div', { class: 'qrow' + (left ? '' : ' end') }, left, h('span', { class: 'dir-chip' }, t(dir === 'de2en' ? 'dirDeEn' : 'dirEnDe')));
+    return h('div', { class: 'qrow' + (left ? '' : ' end') }, left, h('span', { class: 'dir-chip' }, this.dirLabel(dir)));
+  }
+
+  /** "Deutsch → Englisch" etc. for the languages of this list. */
+  dirLabel(dir) {
+    const [from, to] = dir === 'de2en' ? ['de', 'en'] : ['en', 'de'];
+    return t('dirFmt', { a: t('langName_' + this.lang[from]), b: t('langName_' + this.lang[to]) });
   }
 
   promptCard(field, text, compact) {
     return h('div', { class: 'prompt-card pop' + (compact ? ' compact' : '') },
-      h('span', { class: 'label' }, t('label_' + field)),
-      h('span', { class: 'word', lang: field }, text));
+      h('span', { class: 'label' }, t('label_' + this.lang[field])),
+      h('span', { class: 'word', lang: this.lang[field] }, text));
   }
 
   // ---------- game: pairs ----------
 
   makeTile(w, side) {
     const text = pickVariant(side === 'en' ? w.en : w.de, side);
-    const el = h('button', { class: 'tile', type: 'button', lang: side, 'data-side': side, 'data-wid': w.id }, text);
+    const el = h('button', { class: 'tile', type: 'button', lang: this.lang[side], 'data-side': side, 'data-wid': w.id }, text);
     const tile = { el, w, side, text, done: false };
     el.addEventListener('click', () => this.tapTile(tile));
     return el;
@@ -727,7 +737,7 @@ export class Game {
     if (!this.cfg.mixed) {
       const left = shuffle(shown.slice()).map((w) => this.makeTile(w, 'en'));
       const right = shuffle(shown.slice()).map((w) => this.makeTile(w, 'de'));
-      const cells = [h('span', { class: 'col-head' }, t('head_en')), h('span', { class: 'col-head' }, t('head_de'))];
+      const cells = [h('span', { class: 'col-head' }, t('head_' + this.lang.en)), h('span', { class: 'col-head' }, t('head_' + this.lang.de))];
       left.forEach((l, i) => cells.push(l, right[i]));
       grid = h('div', { class: 'pairs cols' }, cells);
     } else {
@@ -889,7 +899,7 @@ export class Game {
       q.promptText = pickVariant(q.w[pf], pf);
       const texts = new Map(opts.map((o) => [o, pickVariant(o[af], af)]));
       const buttons = opts.map((o) => {
-        const b = h('button', { class: 'option', type: 'button', lang: af },
+        const b = h('button', { class: 'option', type: 'button', lang: this.lang[af] },
           h('span', null, texts.get(o)), icon('check', 'icon-ok'), icon('close', 'icon-bad'));
         b.addEventListener('click', () => pick(o, b, buttons, opts, texts.get(o)));
         return b;
@@ -959,7 +969,7 @@ export class Game {
         spellcheck: 'false', maxlength: String(it.hidden.length), enterkeyhint: 'done', 'aria-label': t('task_gaps') + ': ' + chars.map((c, i) => (it.hidden.includes(i) ? '_' : c)).join(' '),
       });
       const box = h('div', { class: 'gapbox' },
-        h('span', { class: 'gapword', lang: 'en', 'aria-hidden': 'true' }, groupEls),
+        h('span', { class: 'gapword', lang: this.lang.en, 'aria-hidden': 'true' }, groupEls),
         h('span', { class: 'gap-hint', 'aria-hidden': 'true' }, icon('keyboard'), t('tapToType')),
         input);
       const okBtn = h('button', { class: 'btn primary typing-btn', type: 'button' }, t('check'));
@@ -1030,7 +1040,7 @@ export class Game {
       const prompt = pickVariant(w.de, 'de');
       const alts = this.words.filter((x) => x === w || variants(x.de, 'de').some((v) => norm(v) === norm(prompt)));
       const input = h('input', {
-        class: 'spell-input', type: 'text', lang: 'en', autocomplete: 'off', autocorrect: 'off', autocapitalize: 'none',
+        class: 'spell-input', type: 'text', lang: this.lang.en, autocomplete: 'off', autocorrect: 'off', autocapitalize: 'none',
         spellcheck: 'false', enterkeyhint: 'done', placeholder: t('typeHere'), 'aria-label': t('typeHere'),
       });
       const okBtn = h('button', { class: 'btn primary typing-btn', type: 'button' }, t('check'));
@@ -1138,7 +1148,7 @@ export class Game {
   okRow(enWord, deWord, cls) {
     return h('div', { class: 'res-row good ' + cls },
       icon('check'),
-      h('span', null, h('b', { lang: 'en' }, enWord), ' = ', h('span', { lang: 'de' }, deWord)));
+      h('span', null, h('b', { lang: this.lang.en }, enWord), ' = ', h('span', { lang: this.lang.de }, deWord)));
   }
 
   failBody(info) {
@@ -1147,7 +1157,7 @@ export class Game {
         h('div', { class: 'fail-group' },
           h('span', { class: 'fail-label' }, t('wrongPair')),
           h('div', { class: 'res-row bad' }, icon('close'),
-            h('s', null, h('span', { lang: 'en' }, info.enText), ' ≠ ', h('span', { lang: 'de' }, info.deText)))),
+            h('s', null, h('span', { lang: this.lang.en }, info.enText), ' ≠ ', h('span', { lang: this.lang.de }, info.deText)))),
         h('div', { class: 'fail-group' },
           h('span', { class: 'fail-label' }, t('correctPairs')),
           this.okRow(allVariants(info.en.en, 'en'), allVariants(info.en.de, 'de'), 'd1'),
@@ -1157,17 +1167,17 @@ export class Game {
       const af = info.dir === 'de2en' ? 'en' : 'de';
       const pf = info.dir === 'de2en' ? 'de' : 'en';
       return h('div', { class: 'modal-body' },
-        h('div', { class: 'prompt-box' }, h('span', { class: 'label' }, t('label_' + pf)), h('span', { class: 'word', lang: pf }, info.promptText)),
+        h('div', { class: 'prompt-box' }, h('span', { class: 'label' }, t('label_' + this.lang[pf])), h('span', { class: 'word', lang: this.lang[pf] }, info.promptText)),
         h('div', { class: 'fail-group' },
           h('div', { class: 'answer-block bad' },
             h('span', { class: 'fail-label' }, t('yourChoice')),
-            h('span', { class: 'val' }, icon('close'), h('s', { lang: af }, info.chosenText))),
+            h('span', { class: 'val' }, icon('close'), h('s', { lang: this.lang[af] }, info.chosenText))),
           h('div', { class: 'answer-block good' },
             h('span', { class: 'fail-label' }, variants(info.word[af], af).length > 1 ? t('allAnswers') : t('correctAnswer')),
-            h('span', { class: 'val' }, icon('check'), h('span', { lang: af }, allVariants(info.word[af], af))))));
+            h('span', { class: 'val' }, icon('check'), h('span', { lang: this.lang[af] }, allVariants(info.word[af], af))))));
     }
     return h('div', { class: 'modal-body' },
-      h('div', { class: 'prompt-box' }, h('span', { class: 'label' }, t('label_de')), h('span', { class: 'word', lang: 'de' }, info.prompt)),
+      h('div', { class: 'prompt-box' }, h('span', { class: 'label' }, t('label_' + this.lang.de)), h('span', { class: 'word', lang: this.lang.de }, info.prompt)),
       this.diffView(info.typed, info.expected),
       this.answerLine(info.prompt, info.alts));
   }
@@ -1178,7 +1188,7 @@ export class Game {
     for (const a of alts) for (const v of variants(a.en, 'en')) if (!answers.some((x) => norm(x) === norm(v))) answers.push(v);
     return h('div', { class: 'answer-line' },
       answers.length > 1 ? h('span', { class: 'fail-label' }, t('allAnswers')) : null,
-      h('p', null, h('span', { lang: 'de' }, prompt), ' = ', h('b', { lang: 'en' }, answers.join(' / '))));
+      h('p', null, h('span', { lang: this.lang.de }, prompt), ' = ', h('b', { lang: this.lang.en }, answers.join(' / '))));
   }
 
   /** Error comparison: "your answer" and "correct" as two labelled rows, wrong parts marked. */
@@ -1200,10 +1210,10 @@ export class Game {
     return h('div', { class: 'answer-diff' },
       h('div', { class: 'diff-row yours', role: 'group', 'aria-label': t('yourInput') + ': ' + typed },
         h('span', { class: 'diff-label' }, icon('close'), t('yourInput')),
-        h('span', { class: 'diff-text', lang: 'en', 'aria-hidden': 'true' }, row(top))),
+        h('span', { class: 'diff-text', lang: this.lang.en, 'aria-hidden': 'true' }, row(top))),
       h('div', { class: 'diff-row correct', role: 'group', 'aria-label': t('expected') + ': ' + expected },
         h('span', { class: 'diff-label' }, icon('check'), t('expected')),
-        h('span', { class: 'diff-text', lang: 'en', 'aria-hidden': 'true' }, row(bot))));
+        h('span', { class: 'diff-text', lang: this.lang.en, 'aria-hidden': 'true' }, row(bot))));
   }
 
   timeUp() {
@@ -1211,7 +1221,7 @@ export class Game {
     this.endRun();
     sfx.bad();
     const recap = h('div', { class: 'recap' }, this.roundWords.map((w) => h('div', null,
-      h('span', { lang: 'en' }, allVariants(w.en, 'en')), h('span', { lang: 'de' }, allVariants(w.de, 'de')))));
+      h('span', { lang: this.lang.en }, allVariants(w.en, 'en')), h('span', { lang: this.lang.de }, allVariants(w.de, 'de')))));
     if (this.mode === 'endless') {
       const summary = this.endlessSummary();
       const st = store.countToday();

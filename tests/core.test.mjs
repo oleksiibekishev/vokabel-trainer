@@ -8,6 +8,7 @@ import {
   ENDLESS, MOD_TYPES, stepValue, applyBonus, komboNext, rollModifier, fitTypeToMod, placeNewPairs, wirbelOrder, trainingTypes, trainingPick,
   trainingSession, TRAINING_MAX, streakInfo, bestStreak, missedDay, weekView, monthGrid, addDays, weekday, shiftMonth,
   BOMB, bombClock, bombLayout, listToText, articleItems, articleSession, ARTICLE_SESSION, ARTICLE_MIN,
+  detectLangs, listLangs,
 } from '../js/core.js';
 import { BUILTIN_LISTS } from '../js/builtin-lists.js';
 
@@ -399,4 +400,22 @@ test('Artikel: nouns with der/die/das, rounds with the hard ones first', () => {
     assert.ok(s.some((it) => it.key === hardKey), 'the noun with mistakes is in the round');
   }
   assert.equal(articleSession(items.slice(0, 3), {}).length, 3, 'small lists: all nouns');
+});
+
+test('list languages: German–Ukrainian, English–German, … are recognized; Artikel finds the German column', () => {
+  const P = (t) => parseWordList(t).words;
+  const deuk = P('der Tisch - стіл\ndie Lampe - лампа\ndas Fenster - вікно\nder Stuhl - стілець\ndie Tür - двері\ngehen - йти\nschön - гарний\ndas Haus - будинок');
+  assert.deepEqual(detectLangs(deuk), { left: 'de', right: 'uk' });
+  assert.equal(articleItems(deuk, detectLangs(deuk)).length, 6);
+  assert.equal(articleItems(deuk, detectLangs(deuk)).find((it) => it.noun === 'Tisch').hint, 'стіл');
+  assert.deepEqual(detectLangs(P('Tisch - стіл\nLampe - лампа\nFenster - вікно\nStuhl - стілець\nTür - двері\ngehen - йти\nschön - гарний\nHaus - будинок')), { left: 'de', right: 'uk' });
+  assert.deepEqual(detectLangs(P('Table - стіл\nLamp - лампа\nWindow - вікно\nChair - стілець\nDoor - двері\nTo go - йти\nBeautiful - гарний\nHouse - будинок')), { left: 'en', right: 'uk' });
+  assert.deepEqual(detectLangs(P('der Tisch - table\ndie Lampe - lamp\ndas Fenster - window\nder Stuhl - chair\ngehen - to go\nschön - beautiful')), { left: 'de', right: 'en' });
+  assert.deepEqual(detectLangs(parseWordList(BUILTIN_LISTS[0].text).words), { left: 'en', right: 'de' });
+  assert.deepEqual(listLangs({ words: deuk, langs: { left: 'en', right: 'uk' } }), { left: 'en', right: 'uk' }, 'the user’s choice wins');
+  assert.equal(articleItems(deuk, { left: 'en', right: 'uk' }).length, 0, 'no German column, no Artikel');
+  // the languages travel with a shared list
+  const shared = listFromShare(listToShare({ name: 'DE–UK', words: deuk, langs: { left: 'de', right: 'uk' } }));
+  assert.deepEqual(shared.langs, { left: 'de', right: 'uk' });
+  assert.equal(listFromShare({ v: 1, n: 'x', w: [['a', 'b']], l: ['xx', 'de'] }).langs, undefined, 'unknown codes are ignored');
 });
