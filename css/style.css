@@ -1270,40 +1270,41 @@ html.locked, html.locked body { overflow: hidden; }
 :root { --osk-bg: #E4E1D8; --osk-key: #FFFFFF; --osk-fn: #CFCBC0; --osk-shadow: rgba(20, 20, 19, 0.22); }
 @media (prefers-color-scheme: dark) { :root { --osk-bg: #1B1B1A; --osk-key: #3A3936; --osk-fn: #2B2A28; --osk-shadow: rgba(0, 0, 0, 0.5); } }
 .osk {
-  --g: 5px; position: fixed; z-index: 30; left: 0; right: 0; bottom: 0;
-  padding: 8px calc(env(safe-area-inset-right) + 4px) calc(env(safe-area-inset-bottom) + 8px) calc(env(safe-area-inset-left) + 4px);
+  --g: 6px; --kh: 46px; --kh: clamp(46px, 7vh, 62px); --kh: clamp(46px, 7dvh, 62px);
+  position: fixed; z-index: 30; left: 0; right: 0; bottom: 0;
+  padding: 10px calc(env(safe-area-inset-right) + 4px) calc(env(safe-area-inset-bottom) + 10px) calc(env(safe-area-inset-left) + 4px);
   background: var(--osk-bg); border-top: 1px solid var(--line);
   transform: translateY(105%); visibility: hidden; transition: transform .22s cubic-bezier(.2, .8, .2, 1), visibility 0s linear .22s;
   touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
 }
 .osk.on { transform: none; visibility: visible; transition: transform .22s cubic-bezier(.2, .8, .2, 1); }
-.osk-in { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 9px; }
+.osk-in { max-width: 600px; margin: 0 auto; display: flex; flex-direction: column; gap: clamp(8px, 1.3dvh, 12px); }
 .osk-row { --u: calc((100% - (var(--n) - 1) * var(--g)) / var(--n)); display: flex; justify-content: center; gap: var(--g); }
 .osk-key {
-  position: relative; flex: 0 0 calc(var(--u) * var(--w, 1) + var(--g) * (var(--w, 1) - 1)); min-width: 0; height: 46px; padding: 0;
-  border: 0; border-radius: 7px; background: var(--osk-key); color: var(--text); box-shadow: 0 1px 0 var(--osk-shadow);
-  display: flex; align-items: center; justify-content: center; font-family: var(--sans); font-size: 21px; font-weight: 500; line-height: 1;
+  position: relative; flex: 0 0 calc(var(--u) * var(--w, 1) + var(--g) * (var(--w, 1) - 1)); min-width: 0; height: var(--kh); padding: 0;
+  border: 0; border-radius: 8px; background: var(--osk-key); color: var(--text); box-shadow: 0 1px 0 var(--osk-shadow);
+  display: flex; align-items: center; justify-content: center; font-family: var(--sans); font-size: 24px; font-weight: 500; line-height: 1;
   -webkit-tap-highlight-color: transparent;
 }
-.osk-key .icon { width: 21px; height: 21px; }
+.osk-key .icon { width: 24px; height: 24px; }
 .osk-fn { background: var(--osk-fn); }
 .osk-key.down { background: var(--osk-fn); }
 .osk-fn.down { background: var(--osk-key); }
 .osk-shift.on { background: var(--osk-key); color: var(--accent-ink); }
 .osk-shift.lock { box-shadow: inset 0 -3px 0 var(--accent); }
 .osk-shift.on .icon { fill: currentColor; }
-.osk-space-label { font-size: 13px; font-weight: 600; color: var(--muted); }
+.osk-space-label { font-size: 14px; font-weight: 600; color: var(--muted); }
 .osk-enter { background: var(--accent); color: var(--on-accent); }
 .osk-enter.down { background: var(--accent-ink); color: var(--surface); }
-.osk-extra .osk-key { height: 36px; font-size: 17px; }
+.osk-extra .osk-key { height: calc(var(--kh) * .78); font-size: 19px; }
 /* the letter shows above the finger */
 .osk-ch.down::before {
   content: attr(data-c); position: absolute; left: 50%; bottom: calc(100% + 6px); z-index: 1; transform: translateX(-50%);
-  min-width: 42px; width: 120%; height: 50px; border-radius: 9px; background: var(--osk-key); color: var(--text);
-  box-shadow: 0 2px 10px var(--osk-shadow); display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 600;
+  min-width: 46px; width: 125%; height: calc(var(--kh) + 8px); border-radius: 10px; background: var(--osk-key); color: var(--text);
+  box-shadow: 0 2px 10px var(--osk-shadow); display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: 600;
   pointer-events: none;
 }
 .game.osk-on { padding-bottom: calc(var(--osk-h, 220px) - env(safe-area-inset-bottom) - 16px); }
 .game.osk-on .gap-hint { display: none; }
 @media (prefers-reduced-motion: reduce) { .osk, .osk.on { transition: none; } }
-@media (max-height: 640px) { .osk { padding-top: 6px; } .osk-key { height: 38px; } .osk-in { gap: 6px; } .osk-extra .osk-key { height: 32px; } }
+@media (max-height: 640px) { .osk { --kh: 40px; padding-top: 6px; } .osk-key { font-size: 21px; } .osk-in { gap: 6px; } }

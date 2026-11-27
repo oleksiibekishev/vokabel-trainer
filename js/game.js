@@ -309,7 +309,12 @@ export class Game {
     if (up && rs > 0) replay(chip, 'bump');
   }
 
+  /**
+   * The app went to the background: pause, so no time is lost. Not in the Fehlertraining – there is no
+   * timer, and the pause would cover the dialog that is open there (e.g. "Fehler!").
+   */
   onVisibility() {
+    if (this.cfg.timer === false) return;
     if (document.hidden && !this.ended && !this.destroyed && !this.holds.has('pause')) this.showPause(false);
   }
 

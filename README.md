@@ -42,7 +42,7 @@ Die Zeitbombe lässt sich in den Einstellungen abschalten (Schalter „Zeitbombe
 ### Weitere Modi
 
 - **Endlos** (nach „Mittel“, siehe oben): Runden ohne Ende mit allen Spielen, Start 30 s, **kein Limit**. Bonus: +10 s bis Runde 10, +8 s bis 20, +6 s bis 30, danach +5 s. Spezialrunden werden häufiger (25 % → 50 %), Zeitraffer ab Runde 21 2×. Ein Fehler beendet das Spiel, Rekord = geschaffte Runden.
-- **Fehlertraining**: nur Wörter mit Fehlern, ohne Zeit, höchstens 10 Wörter pro Durchgang (die schwierigsten zuerst). Jedes Wort muss 3× richtig sein (Auswahl → Lücken → Schreiben), dann steht sein Fehlerzähler wieder auf 0. Ein Fehler schickt das Wort zurück an den Anfang. Im Fehler-Fenster eines Levels startet „Dieses Wort üben“ das Fehlertraining mit genau diesem Wort. Auch ein falscher Artikel im Modus „Artikel“ zählt als Fehler des Wortes und bringt es ins Fehlertraining.
+- **Fehlertraining**: nur Wörter mit Fehlern, ohne Zeit (darum auch keine Pause, wenn die App kurz in den Hintergrund geht), höchstens 10 Wörter pro Durchgang (die schwierigsten zuerst). Jedes Wort muss 3× richtig sein (Auswahl → Lücken → Schreiben), dann steht sein Fehlerzähler wieder auf 0. Ein Fehler schickt das Wort zurück an den Anfang. Im Fehler-Fenster eines Levels startet „Dieses Wort üben“ das Fehlertraining mit genau diesem Wort. Auch ein falscher Artikel im Modus „Artikel“ zählt als Fehler des Wortes und bringt es ins Fehlertraining.
 - **Artikel** (von Anfang an offen): der, die oder das? 40 Nomen der aktuellen Liste pro Runde (hat die Liste weniger, kommt jedes Nomen einmal), ohne Zeit; das englische Wort steht als Hilfe darunter (z. B. „Lager – stock“). Ein Fehler beendet die Runde nicht: die richtige Antwort wird gezeigt, am Ende stehen die falschen Nomen mit Artikel (scrollbare Liste), „Fehler wiederholen“ übt genau diese; ihre Wörter landen außerdem im Fehlertraining. Nomen mit Fehlern kommen in der nächsten Runde zuerst (höchstens die Hälfte). Genommen werden alle deutschen Übersetzungen, die mit der/die/das beginnen – ohne Plural-Markierung („die Daten (Pl.)“), Klammern oder Doppelformen („der/die Verbraucher/-in“). Braucht mindestens 4 solche Nomen in der Liste. Zählt für die Tagesserie.
 
 ### Tagesserie
@@ -79,6 +79,7 @@ Die Handy-Tastatur schlägt beim Tippen Wörter vor – und verrät so die Antwo
 
 - Das Eingabefeld behält den Fokus mit `inputmode="none"` – die Handy-Tastatur öffnet sich nicht; eine Hardware-Tastatur funktioniert weiter.
 - Belegung nach der Sprache des getippten Worts: Deutsch QWERTZ mit ü ö ä ß, Englisch QWERTY mit ' und -, Ukrainisch ЙЦУКЕН mit ї є ґ und '. Zeichen der Liste ohne eigene Taste (é, Ziffern, /) bekommen eine Extrazeile.
+- Tastenhöhe wächst mit dem Bildschirm (46–62 px, 7 % der Höhe).
 - ⇧ einmal: nächster Buchstabe groß, zweimal schnell: Feststelltaste. ⌫ gedrückt halten löscht weiter, ↵ = Prüfen. Beim Drücken erscheint der Buchstabe über dem Finger; kurze Vibration, wenn Vibration an ist.
 - Einstellungen → „Eigene Tastatur“ schaltet zurück auf die Handy-Tastatur (der Schalter erscheint nur auf Touch-Geräten).
 

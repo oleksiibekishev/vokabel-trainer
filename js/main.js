@@ -11,7 +11,7 @@ import { touchScreen } from './keyboard.js';
 import * as streakUI from './streak.js';
 import { openIntro, closeIntro, introIsOpen } from './intro.js';
 
-export const APP_VERSION = '1.12.0';
+export const APP_VERSION = '1.12.1';
 
 const app = document.getElementById('app');
 let game = null;

@@ -921,6 +921,15 @@ async function main() {
   await oneMistake();
   await page.waitForSelector('.osk.on');
   assert.equal(await page.locator('.gap-input').getAttribute('inputmode'), 'none', 'the phone keyboard stays closed');
+  // the app goes to the background for a moment (e.g. a screenshot): no pause in the Fehlertraining (no timer)
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.waitForTimeout(250);
+  assert.equal(await page.locator('.modal').count(), 0, 'no "Pause" in the Fehlertraining');
   assert.ok(await page.locator('.osk-key[data-k="y"]').count() && !(await page.locator('.osk-key[data-k="ü"]').count()), 'English layout');
   assert.equal(await page.locator('.osk-space').textContent(), 'Englisch');
   await page.locator('.osk-key[data-k="x"]').tap();
@@ -977,6 +986,17 @@ async function main() {
   await page.waitForFunction(() => document.querySelector('.home') && !document.querySelector('.sheet') && !document.documentElement.classList.contains('busy'));
   await page.locator('.level-card.level-easy').click();
   await page.waitForSelector('.tile');
+  // in a level with a timer the app pauses when it goes to the background
+  await page.waitForTimeout(400);
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+  });
+  await page.waitForSelector('.modal');
+  assert.ok((await page.locator('.modal').textContent()).includes('Pause'), 'level: pause in the background');
+  await page.locator('.modal .btn', { hasText: 'Weiterspielen' }).click();
+  await page.waitForFunction(() => !document.querySelector('.modal'));
   await page.goBack();
   await page.waitForSelector('.modal');
   assert.ok((await page.locator('.modal').textContent()).includes('Spiel beenden'));
