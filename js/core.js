@@ -173,6 +173,37 @@ export function placeNewPairs(freed, words, mixed, rnd = Math.random) {
 
 export const LIST_LANGS = ['en', 'de', 'uk'];
 
+// ---------- own keyboard (typing games) ----------
+
+/** Letter rows and the small keys next to the space bar, per language of the typed word. */
+export const KEY_LAYOUTS = {
+  de: { rows: ['qwertzuiopü', 'asdfghjklöä', 'yxcvbnmß'], side: ['-'] },
+  en: { rows: ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'], side: ["'", '-'] },
+  uk: { rows: ['йцукенгшщзхї', 'фівапролджє', 'ячсмитьбю'], side: ['ґ', "'", '-'] },
+};
+
+export function keyLayout(lang) {
+  return KEY_LAYOUTS[lang] || KEY_LAYOUTS.en;
+}
+
+/**
+ * Characters the answers need that the layout has no key for (é, digits, a slash …) – they get an
+ * extra row. texts: the answers as they can be typed.
+ */
+export function extraKeys(texts, lang, max = 12) {
+  const L = keyLayout(lang);
+  const have = new Set([...L.rows.join(''), ...L.side, ' ']);
+  const out = [];
+  for (const tx of texts) {
+    // a dot or ! at the end is ignored when the answer is checked
+    for (const ch of norm(tx).replace(/[.!]+$/, '')) {
+      if (have.has(ch) || out.includes(ch) || /\s/.test(ch)) continue;
+      out.push(ch);
+    }
+  }
+  return out.sort().slice(0, max);
+}
+
 const CYR = /[\u0400-\u04FF]/;
 const DE_STRONG = /^(der|die|das|ein|eine)\s|[äöüßÄÖÜ]/;
 const DE_WEAK = /sch|ung\b|keit\b|heit\b|lich\b|chen\b|tz|pf|ei|ie|\bzu\b|\bund\b/;

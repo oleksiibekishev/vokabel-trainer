@@ -901,6 +901,78 @@ async function main() {
   assert.ok(await page.locator('.mode-card.mode-endless').isDisabled(), 'Endlos is locked again (opens after Mittel)');
   assert.equal(await page.locator('.streak-chip .roll').textContent(), '0', 'Tagesserie starts again');
 
+  // ---------- 8j. own keyboard in Lücken/Schreiben: no phone keyboard (no word suggestions); can be switched off ----------
+  const oneMistake = async () => {
+    await page.evaluate(() => {
+      const k = 'vokabeltrainer.v1'; const s = JSON.parse(localStorage.getItem(k));
+      const w = s.lists[s.currentListId].words[3];
+      s.stats[s.currentListId] = { [w.id]: { w: 2, r: 0 } };
+      localStorage.setItem(k, JSON.stringify(s));
+    });
+    await page.reload();
+    await page.waitForSelector('.mode-card.mode-training:not([disabled])');
+    await page.evaluate(() => { window.__vtMods = 'off'; });
+    await page.locator('.mode-card.mode-training').click();
+    await page.waitForSelector('main.board .choice');
+    assert.equal(await page.locator('.osk.on').count(), 0, 'no keyboard in a choice step');
+    await choiceOne();
+    await page.waitForSelector('main.board .gap-input');
+  };
+  await oneMistake();
+  await page.waitForSelector('.osk.on');
+  assert.equal(await page.locator('.gap-input').getAttribute('inputmode'), 'none', 'the phone keyboard stays closed');
+  assert.ok(await page.locator('.osk-key[data-k="y"]').count() && !(await page.locator('.osk-key[data-k="ü"]').count()), 'English layout');
+  assert.equal(await page.locator('.osk-space').textContent(), 'Englisch');
+  await page.locator('.osk-key[data-k="x"]').tap();
+  assert.equal(await page.locator('.cell.gap.filled').count(), 1, 'a key writes into the gaps');
+  await page.locator('.osk-key[data-k="back"]').tap();
+  assert.equal(await page.locator('.cell.gap.filled').count(), 0, 'backspace');
+  const tw = await page.evaluate(() => window.__vtGame.tCur.w);
+  {
+    const cells = await page.locator('.gapword .cell').evaluateAll((els) => els.map((e) => (e.classList.contains('gap') ? null : e.textContent)));
+    const target = core.gapTargets(tw.en).map((f) => [...f].filter((c) => c !== ' '))
+      .find((f) => f.length === cells.length && f.every((c, i) => cells[i] === null || cells[i] === c));
+    for (const ch of target.filter((c, i) => cells[i] === null)) await page.locator('.osk-key[data-k="' + ch.toLowerCase() + '"]').tap();
+  }
+  const okBox = await page.locator('.typing-btn').boundingBox();
+  assert.ok(okBox.y + okBox.height <= (await page.locator('.osk').boundingBox()).y, '"Prüfen" stays above the keyboard');
+  await shot(page, '34-own-keyboard');
+  await page.locator('.osk-key[data-k="enter"]').tap();
+  await page.waitForSelector('main.board .spell-input');
+  assert.ok(await page.locator('.osk.on').count(), 'the keyboard stays for Schreiben');
+  assert.equal(await page.locator('.task-title').textContent(), 'Schreib das Wort auf Englisch');
+  const form = core.displayForms(tw.en)[0];
+  await page.locator('.osk-key[data-k="shift"]').tap();
+  for (const ch of form.toLowerCase()) await page.locator('.osk-key[data-k="' + ch + '"]').first().tap();
+  assert.equal(await page.locator('.spell-input').inputValue(), form[0].toUpperCase() + form.slice(1).toLowerCase(), 'Shift: one capital letter');
+  await page.locator('.osk-key[data-k="enter"]').tap();
+  await page.waitForSelector('.modal');
+  assert.equal(await page.locator('.osk.on').count(), 0, 'the keyboard goes away at the end');
+  await page.locator('.modal .btn', { hasText: 'Menü' }).click();
+  await page.waitForSelector('.home');
+  // settings: "Eigene Tastatur" off → the phone keyboard as before
+  await page.locator('.home-top .icon-btn').click();
+  await page.waitForSelector('.sheet .switch');
+  const kbSwitch = page.locator('.set-row', { hasText: 'Eigene Tastatur' }).locator('.switch');
+  assert.equal(await kbSwitch.getAttribute('aria-checked'), 'true', 'on by default');
+  await kbSwitch.click();
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('vokabeltrainer.v1')).settings.ownKeyboard === false);
+  await page.goBack();
+  await page.waitForFunction(() => !document.querySelector('.sheet'));
+  await oneMistake();
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('.osk').count(), 0, 'switched off: no own keyboard');
+  assert.equal(await page.locator('.gap-input').getAttribute('inputmode'), null);
+  await page.locator('.game-top .icon-btn').click();
+  await page.locator('.modal .btn', { hasText: 'Beenden' }).click();
+  await page.waitForSelector('.home');
+  await page.evaluate(() => {
+    const k = 'vokabeltrainer.v1'; const s = JSON.parse(localStorage.getItem(k));
+    s.settings.ownKeyboard = true; localStorage.setItem(k, JSON.stringify(s));
+  });
+  await page.reload();
+  await page.waitForSelector('.level-card');
+
   // ---------- 8. Android back button during a game asks before quitting ----------
   await page.waitForFunction(() => document.querySelector('.home') && !document.querySelector('.sheet') && !document.documentElement.classList.contains('busy'));
   await page.locator('.level-card.level-easy').click();

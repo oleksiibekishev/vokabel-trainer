@@ -2,9 +2,10 @@ import {
   LEVELS, LEVEL_IDS, ENDLESS, ROUND_SIZE, WIRBEL_EXTRA, KOMBO_MAX, MOD_TYPES, buildTypePlan, endlessTypes, pickWords, pickDistractors,
   makeGaps, checkAnswer, closestForm, answerDiff, shuffle, wordFilterFor, variants, pickVariant, allVariants, gapTargets, norm,
   stepValue, applyBonus, komboNext, rollModifier, fitTypeToMod, placeNewPairs, wirbelOrder, trainingTypes, trainingPick, BOMB,
-  listLangs,
+  listLangs, answerVariants, extraKeys,
 } from './core.js';
 import { Bomb } from './bomb.js';
+import { Keyboard, ownKeyboardWanted } from './keyboard.js';
 import * as store from './store.js';
 import { t, tSplit, tDays } from './i18n.js';
 import { h, icon, levelBars, modal, sfx } from './ui.js';
@@ -85,6 +86,10 @@ export class Game {
     this.onVisibility = this.onVisibility.bind(this);
     document.addEventListener('visibilitychange', this.onVisibility);
     this.buildShell();
+    // own keyboard for Lücken and Schreiben (the phone keyboard would suggest the words)
+    this.kb = ownKeyboardWanted()
+      ? new Keyboard({ root: this.root, lang: this.lang.en, extra: extraKeys(this.words.flatMap((w) => answerVariants(w.en)), this.lang.en) })
+      : null;
     this.raf = requestAnimationFrame(this.tick);
   }
 
@@ -212,6 +217,7 @@ export class Game {
     this.epoch++;
     cancelAnimationFrame(this.raf);
     document.removeEventListener('visibilitychange', this.onVisibility);
+    if (this.kb) this.kb.destroy();
   }
 
   // ---------- timer ----------
@@ -454,13 +460,19 @@ export class Game {
     this.roundType = type;
     this.roundWords = words;
     this.currentInput = null;
+    if (this.kb) this.kb.detach();
     this.renderRoundLine();
-    this.elTask.textContent = t('task_' + type);
+    this.elTask.textContent = this.taskText(type);
     this.root.classList.toggle('typing-round', KEYBOARD_TYPES.includes(type));
     this.renderDots({ roll: this.mode === 'endless' && this.roundIdx > 0 });
     this.renderBoard(type, words);
     this.renderModUI();
     if (mod) this.showModBanner(mod);
+  }
+
+  /** "Schreib das Wort auf Deutsch" in a German–Ukrainian list (the typed word is the left column). */
+  taskText(type) {
+    return type === 'spell' ? t('task_spellIn', { lang: t('langIn_' + this.lang.en) }) : t('task_' + type);
   }
 
   renderBoard(type, words) {
@@ -1022,6 +1034,7 @@ export class Game {
         box,
         okBtn,
       );
+      if (this.kb) this.kb.attach(input, { maxLetters: it.hidden.length });
       this.currentInput = input;
       input.focus({ preventScroll: true });
       update();
@@ -1041,7 +1054,7 @@ export class Game {
       const alts = this.words.filter((x) => x === w || variants(x.de, 'de').some((v) => norm(v) === norm(prompt)));
       const input = h('input', {
         class: 'spell-input', type: 'text', lang: this.lang.en, autocomplete: 'off', autocorrect: 'off', autocapitalize: 'none',
-        spellcheck: 'false', enterkeyhint: 'done', placeholder: t('typeHere'), 'aria-label': t('typeHere'),
+        spellcheck: 'false', enterkeyhint: 'done', placeholder: t('typeHere_' + this.lang.en), 'aria-label': t('typeHere_' + this.lang.en),
       });
       const okBtn = h('button', { class: 'btn primary typing-btn', type: 'button' }, t('check'));
       const submit = () => {
@@ -1073,6 +1086,7 @@ export class Game {
         input,
         okBtn,
       );
+      if (this.kb) this.kb.attach(input);
       this.currentInput = input;
       input.focus({ preventScroll: true });
     };
@@ -1091,6 +1105,7 @@ export class Game {
     this.ended = true;
     this.epoch++;
     this.currentInput = null;
+    if (this.kb) this.kb.detach();
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   }
 
@@ -1342,11 +1357,12 @@ export class Game {
     this.roundType = type;
     this.roundWords = [it.w];
     this.currentInput = null;
+    if (this.kb) this.kb.detach();
     // after a learned word the counter changes when the word card arrives there
     if (learnedAnim) this.later(450, () => this.renderTrainingCount(left, true));
     else this.renderTrainingCount(left, false);
     this.renderSteps();
-    this.elTask.textContent = t('task_' + type);
+    this.elTask.textContent = this.taskText(type);
     this.root.classList.toggle('typing-round', KEYBOARD_TYPES.includes(type));
     this.renderBoard(type, [it.w]);
     if (learnedAnim) this.board.classList.add('swap-in');
@@ -1440,6 +1456,7 @@ export class Game {
     it.step = 0;
     this.tQueue.push(it);
     this.currentInput = null;
+    if (this.kb) this.kb.detach();
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     this.root.classList.add('shake');
     const e = this.epoch;

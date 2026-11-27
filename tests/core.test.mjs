@@ -8,6 +8,7 @@ import {
   ENDLESS, MOD_TYPES, stepValue, applyBonus, komboNext, rollModifier, fitTypeToMod, placeNewPairs, wirbelOrder, trainingTypes, trainingPick,
   trainingSession, TRAINING_MAX, streakInfo, bestStreak, missedDay, weekView, monthGrid, addDays, weekday, shiftMonth,
   BOMB, bombClock, bombLayout, listToText, articleItems, articleSession, ARTICLE_SESSION, ARTICLE_MIN,
+  keyLayout, extraKeys,
   detectLangs, listLangs,
 } from '../js/core.js';
 import { BUILTIN_LISTS } from '../js/builtin-lists.js';
@@ -428,4 +429,16 @@ test('list languages: German–Ukrainian, English–German, … are recognized; 
   const shared = listFromShare(listToShare({ name: 'DE–UK', words: deuk, langs: { left: 'de', right: 'uk' } }));
   assert.deepEqual(shared.langs, { left: 'de', right: 'uk' });
   assert.equal(listFromShare({ v: 1, n: 'x', w: [['a', 'b']], l: ['xx', 'de'] }).langs, undefined, 'unknown codes are ignored');
+});
+
+test('own keyboard: a layout per language, extra keys for characters without a key', () => {
+  assert.ok(keyLayout('de').rows.join('').includes('ü') && keyLayout('de').rows.join('').includes('ß'));
+  assert.ok(keyLayout('uk').rows.join('').includes('ї') && keyLayout('uk').side.includes('ґ'));
+  assert.equal(keyLayout('xx'), keyLayout('en'));
+  // every letter of the built-in list has a key (no extra row needed)
+  const words = parseWordList(BUILTIN_LISTS[0].text).words;
+  assert.deepEqual(extraKeys(words.flatMap((w) => answerVariants(w.en)), 'en'), []);
+  assert.deepEqual(extraKeys(['café', 'e-mail', '24/7', 'e.g.', 'hello!'], 'en'), ['.', '/', '2', '4', '7', 'é']);
+  assert.deepEqual(extraKeys(['п’ять', 'ґанок'], 'uk'), [], 'apostrophe and ґ are on the Ukrainian keyboard');
+  assert.deepEqual(extraKeys(['die Straße', 'der Schlüssel'], 'de'), []);
 });

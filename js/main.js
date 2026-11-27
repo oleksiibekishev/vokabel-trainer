@@ -7,10 +7,11 @@ import {
 } from './core.js';
 import { Game } from './game.js';
 import { ArticleGame } from './artikel.js';
+import { touchScreen } from './keyboard.js';
 import * as streakUI from './streak.js';
 import { openIntro, closeIntro, introIsOpen } from './intro.js';
 
-export const APP_VERSION = '1.11.0';
+export const APP_VERSION = '1.12.0';
 
 const app = document.getElementById('app');
 let game = null;
@@ -343,6 +344,12 @@ function topbar(title) {
 
 // ---------- home ----------
 
+/** "Englisch ↔ Deutsch" – the languages of the current list (e.g. "Deutsch ↔ Ukrainisch"). */
+function tagline(list) {
+  const L = listLangs(list);
+  return t('langName_' + L.left) + ' ↔ ' + t('langName_' + L.right);
+}
+
 function renderHome() {
   const list = store.currentList();
   const wrap = h('div', { class: 'screen home' });
@@ -351,7 +358,7 @@ function renderHome() {
   const chip = streakUI.streakChip(view, open);
   const head = h('header', { class: 'topbar home-top' },
     logo(),
-    h('div', { class: 'brand' }, h('h1', null, t('appName')), h('p', null, t('tagline'))),
+    h('div', { class: 'brand' }, h('h1', null, t('appName')), h('p', null, list ? tagline(list) : t('tagline'))),
     chip,
     h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('settings'), onclick: () => navigate('settings') }, icon('gear')));
   wrap.appendChild(head);
@@ -801,6 +808,7 @@ function renderSettings() {
     switchRow(t('sound'), 'sound'),
     'vibrate' in navigator ? switchRow(t('vibration'), 'vibrate', t('vibrationHint')) : null,
     switchRow(t('zbSetting'), 'zeitbombe', t('zbSettingHint')),
+    touchScreen() ? switchRow(t('kbSetting'), 'ownKeyboard', t('kbSettingHint')) : null,
     h('div', { class: 'set-row' },
       h('span', { class: 'set-label' }, t('introSetting'), h('small', null, t('introSettingHint'))),
       h('button', {

@@ -73,6 +73,15 @@ to record - erfassen, aufnehmen
 - Mehrere Übersetzungen (z. B. `das Verzeichnis, der Bericht`): im Spiel erscheint jeweils eine zufällig, bei einem Fehler werden alle richtigen Antworten gezeigt
 - Beim Schreiben ist Groß-/Kleinschreibung egal, `to` am Anfang ist optional
 
+### Eigene Tastatur (Lücken, Schreiben)
+
+Die Handy-Tastatur schlägt beim Tippen Wörter vor – und verrät so die Antwort. `autocomplete="off"` setzt die App seit jeher (Chrome gibt das als „keine Vorschläge“ an die Tastatur weiter), aber viele Tastaturen ignorieren das. Deshalb hat die App auf Touch-Geräten eine eigene Tastatur (`js/keyboard.js`):
+
+- Das Eingabefeld behält den Fokus mit `inputmode="none"` – die Handy-Tastatur öffnet sich nicht; eine Hardware-Tastatur funktioniert weiter.
+- Belegung nach der Sprache des getippten Worts: Deutsch QWERTZ mit ü ö ä ß, Englisch QWERTY mit ' und -, Ukrainisch ЙЦУКЕН mit ї є ґ und '. Zeichen der Liste ohne eigene Taste (é, Ziffern, /) bekommen eine Extrazeile.
+- ⇧ einmal: nächster Buchstabe groß, zweimal schnell: Feststelltaste. ⌫ gedrückt halten löscht weiter, ↵ = Prüfen. Beim Drücken erscheint der Buchstabe über dem Finger; kurze Vibration, wenn Vibration an ist.
+- Einstellungen → „Eigene Tastatur“ schaltet zurück auf die Handy-Tastatur (der Schalter erscheint nur auf Touch-Geräten).
+
 ## Design
 
 Warmer, ruhiger Stil: Ivory-Hintergrund, dunkle Hauptbuttons, Clay (`#D97757`) nur für „spannende“ Stellen (Zeitbalken, aktuelle Runde, Auswahl, „+10 s“). Hell- und Dunkelmodus folgen dem Handy.
@@ -95,6 +104,7 @@ Reines HTML/CSS/JavaScript ohne Build-Schritt.
 - `js/bomb.js` + `css/zeitbombe.css` – Spezialrunde Zeitbombe
 - `js/intro.js` – Einführung (erster Start, Einstellungen)
 - `js/artikel.js` – Modus Artikel (der, die, das)
+- `js/keyboard.js` – eigene Bildschirmtastatur für Lücken und Schreiben
 - `js/main.js` – Bildschirme (Start, Listen, Wörter, Einstellungen)
 - `js/builtin-lists.js` – Listen, die alle automatisch bekommen
 - `sw.js` – Offline-Cache

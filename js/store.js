@@ -23,7 +23,7 @@ function defaults() {
     days: [],
     streak: { best: 0, shown: 0, brokeOn: null },
     // introSeen: the Einführung was shown once (first start); it can be opened again in the settings
-    settings: { lang: null, sound: true, vibrate: true, iosHintDismissed: false, zeitbombe: true, introSeen: false },
+    settings: { lang: null, sound: true, vibrate: true, iosHintDismissed: false, zeitbombe: true, introSeen: false, ownKeyboard: true },
   };
 }
 
